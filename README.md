@@ -95,6 +95,7 @@ instant.
 | **Shift** (hold) | Boost: extra speed while your boost bar has charge |
 | **Space** or **left-click** | Fire a laser shot (requires laser ammo) |
 | **E** (Aux key) or **right-click** | Fire a rocket (requires rocket ammo). Outside of a battle, instead opens the lobby menu |
+| **C** | Change camera view |
 
 Movement only happens while you hold a direction — release and you stop.
 Driving into a wall or another tank just stops you in place. Only a shot 
@@ -106,8 +107,8 @@ move up or down as you tilt the camera — that's intentional.
 
 ### Scoring
 
-Every racer scores based on how long they lasted, not just the winner. The first player 
-to be eliminated places last, the last player racing places first.
+Every player scores based on how long they lasted, not just the winner. The first player 
+to be eliminated places last, the last player standing on the map places first.
 
 | Placement | Points |
 |---|---|
@@ -121,17 +122,16 @@ to be eliminated places last, the last player racing places first.
 | 8th | 4 |
 
 A battle with no survivors doesn't award 1st place to anyone, since nobody
-actually won. Racers eliminated simultaneously (e.g. caught in the same
+actually won. Players eliminated simultaneously (e.g. caught in the same
 rocket blast) share the same placement, and the next rank down is left
-vacant rather than shifting up to fill the gap.
+vacant.
 
 On top of placement, collecting a point powerup adds 3 points, and
-eliminating an opponent with a laser or rocket shot adds 5 — both on top
-of whatever points you get for your place at the end of a battle.
+eliminating an opponent with a laser or rocket shot adds 5.
 
-Scores reset each game — either when a second player joins after
-someone's been playing solo, or after a set number of races (5 by
-default, admin-configurable), at which point whoever has the most points
+Scores accumulate between battles but reset each game — either when a second 
+player joins after someone's been playing solo, or after a set number of battles 
+(5 by default, admin-configurable), at which point whoever has the most points
 is declared the overall winner and everyone starts fresh. 
 
 A live "Battle: N/M" counter (with a running clock) is always visible, and while a
@@ -141,11 +141,13 @@ rank in the current battle, this battle's running score, and their overall game 
 That same table shows the final result at the end of a battle or game until the next
 one starts.
 
-When one player is playing solo (no other players, no bots) the game ends when the last point powerup was collected - it's a battle against time to collect them as fast as possible.
+When one player is playing solo (no other players, no bots) the game ends when the last 
+point powerup was collected - it's a battle against time to collect them as fast as possible.
 
 ### Score table
 
-The score table shows each racer's name, rank in the current battle, battle score (including awarded points), and overall game score: 
+The score table shows each player's name, rank in the current battle, battle score 
+(including awarded points), and overall game score: 
 - Name : Player name.
 - RR : Battle Rank - the rank in the current battle.
 - RS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.
@@ -166,31 +168,30 @@ further:
 - **Boost powerup** — spawns at a random spot during a battle and vanishes
   if not grabbed in time; instantly refills your boost bar.
 - **Shield powerup** — absorbs the next laser or rocket hit that would
-  otherwise derez you, instead of taking effect, consuming one charge.
-- **Laser powerup** — grants a few shots (2 by default). A laser bolt is
+  otherwise derez you, consuming one charge.
+- **Laser powerup** — grants laser bolt (10 by default). A laser bolt is
   fast and precise, bouncing off walls (up to 3 times before fizzling out)
-  and eliminating a single opponent on a direct hit — including, once
-  it's bounced at least once, the shooter themselves, if unlucky enough to
-  be standing in its path.
-- **Rocket powerup** — grants a rocket (1 by default). A rocket is
+  and eliminating a single opponent on a direct hit. A bounced shot can derez 
+  the shooter themselves, if unlucky enough to be standing in its path.
+- **Rocket powerup** — grants rockets (5 by default). A rocket is
   slower than a laser bolt and doesn't bounce off anything: it detonates
   on hitting either a tank or a wall, destroying a 3x3 area and
-  eliminating every racer caught standing in it, not just whichever it
+  eliminating every player caught standing in it, not just whichever it
   directly hit.
 
 ### Bots
 
 Admins can add bots to singleplayer and multiplayer games. There are three bot behaviors: passive, opportunistic, and aggressive.
 
-- **Passive** - Go straight until obstacle then turn one way. Never seeks a powerup or an enemy. 
-- **Opportunistic** - Commits to the nearest powerup within a limited range (default: 10 nodes) the instant one comes into range, staying committed until it's reached, gone, or blocked.
-- **Aggressive** - Drives straight at the nearest other tank (no real pathfinding — just heads for its current position, adjusting each tick) until it's within 3 nodes, then holds that distance instead of ramming in — tanks aren't melee weapons — turning to line up a shot if needed. Falls back to the nearest powerup if no clear path to an enemy is open this tick.
+- **Passive** - Heads for the nearest point powerup anywhere on the map (point powerups are placed as part of the level and don't expire, unlike the others, making them a sensible standing objective) - navigating there with the same wall-following steering described below. Never goes out of its way for a boost/shield/laser/rocket powerup or an enemy, though it'll still pick one up if driving past it.
+- **Opportunistic** - Commits to the nearest powerup of any kind within a limited range (default: 10 nodes) the instant one comes into range, staying committed until it's reached, gone, or blocked. Falls back to the same point-powerup-seeking as Passive when nothing's within that range, rather than just wandering.
+- **Aggressive** - Heads straight at the nearest other tank until it's within 3 nodes, turning to line up a shot if needed. Prioritizes staying combat-ready over hunting: heads for the nearest laser or rocket powerup, whenever its total ammo drops below 5 and heads for the nearest shield powerup if it's out of shields; Falls back to the nearest powerup of any kind, anywhere on the map, if none of the above found anything reachable this tick.
 
-All behaviors share the same base obstacle avoidance: look ahead along the current heading; if blocked, turn toward whichever side is clear; if both sides are safe, weigh toward whichever has more open room further out.
+All behaviors share the same base obstacle avoidance: look ahead along the current heading; if blocked, turn toward whichever side is clear; if both sides are safe, weigh toward whichever has more open room further out. If a bot ever goes about 2 seconds without actually making progress - stuck against something this steering can't resolve on its own, like a dead-end corner needing a full U-turn rather than a single turn - it backs up about 3 nodes to clear whatever it's touching, then commits to a random turn and continues, reassessing from there.
 
 Bots use shields automatically and boost automatically whenever they have charge available.
 
-Bots aim their turret independently of their body facing, exactly like a player's free mouse-look does - regardless of behavior type, every bot looks for the nearest enemy tank within 10 nodes, points its turret straight at it, and fires (laser first if it has any left, rocket only once completely out of laser ammo) as long as a clear line of sight confirms nothing's in the way. Bots do not avoid laser bolts or rockets shot at them.
+Bots aim their turret independently of their body facing, exactly like a player's free mouse-look does - regardless of behavior type, every bot looks for the nearest enemy tank within 10 nodes, points its turret straight at it, and fires (laser preferred, reaching for a rocket instead whenever laser is either out of ammo or still cooling down from the last shot) as long as a clear line of sight confirms nothing's in the way. Bots do not avoid laser bolts or rockets shot at them.
 
 The admin can choose the number of bots in a game and their behavior. Choosing "random" will assign each bot a random behavior from one of the three for the duration of the game. A bot's name shows their assigned behavior in the name: - `(p)` for passive, `(o)` for opportunistic, and `(a)` for aggressive. 
  

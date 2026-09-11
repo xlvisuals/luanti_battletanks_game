@@ -95,7 +95,7 @@ function lobby_system.gui.on_match_start(racer_names)
     end
 end
 
-function lobby_system.gui.refresh_non_battlers()
+function lobby_system.gui.refresh_non_players()
     for _, player in ipairs(minetest.get_connected_players()) do
         local pname = player:get_player_name()
         if not lobby_system.state.players[pname] then

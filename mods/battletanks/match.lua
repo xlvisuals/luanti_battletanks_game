@@ -166,7 +166,7 @@ function battletanks.eliminate_batch(names)
 end
 
 
-local function count_battlers()
+local function count_players()
     local n = 0
     for _ in pairs(battletanks.players) do n = n + 1 end
     return n
@@ -316,7 +316,7 @@ function battletanks.end_match(winner)
     local top_tier
     if winner then
         top_tier = { winner }
-    elseif count_battlers() > 1 then
+    elseif count_players() > 1 then
         top_tier = {}
     end -- else: solo draw, top_tier stays nil - no placement scoring
 
@@ -331,7 +331,7 @@ function battletanks.end_match_timeout()
         if pdata.alive then table.insert(still_alive, name) end
     end
 
-    if count_battlers() <= 1 then
+    if count_players() <= 1 then
         finish_match(nil, "Time's up! No survivors bonus for a solo run.")
     else
         finish_match(still_alive, "Time's up! " .. #still_alive .. " rider"
@@ -354,6 +354,7 @@ local function help_formspec()
 		"- Shift (hold) : boost, while your boost bar isn't empty.\n",
 		"- Space or Left-click : fire a laser shot (requires laser).\n",
 		"- E (Aux key) or Right-click : fire a rocket (requires rocket) while racing. Outside of a battle, E instead reopens the lobby menu.\n",
+		"- C : change camera view.\n",
 		"\n",
 		"<b>Scoring</b>\n",
 		"Every racer scores points based on where they finished: \n",
@@ -365,7 +366,7 @@ local function help_formspec()
 		"- 6th place : " .. S.placement_points[6] .. "\n",
 		"- 7th place : " .. S.placement_points[7] .. "\n",
 		"- 8th place : " .. S.placement_points[8] .. "\n",
-		"A round with no survivors doesn't award 1st place to anyone, since nobody actually won. Racers that are eliminated simultaneously occupy the same rank, and the next rank down is vacant.\n",
+		"A round with no survivors doesn't award 1st place to anyone, since nobody actually won. Players that are eliminated simultaneously occupy the same rank, and the next rank down is vacant.\n",
 		"Collecting a point powerup awards " .. S.point_powerup_value .. " additional points.\n",
         "Eliminating an opponent with a shot (laser or rocket) awards " .. S.kill_by_shot_points .. " additional points.\n",
         "\n",
@@ -512,6 +513,12 @@ lobby_system.register_game({
         last_match_duration = nil -- don't show the previous match's stale duration during this one
         battletanks.match_generation = battletanks.match_generation + 1
         local this_generation = battletanks.match_generation
+
+        -- Guarantees a clean slate regardless of how the previous match
+        -- ended (see the comment on this function in arena.lua) - a new
+        -- match should only ever start with point powerups on the map,
+        -- nothing else.
+        battletanks.clear_stray_dynamic_powerups()
 
         if timeout_job then
             timeout_job:cancel(); timeout_job = nil

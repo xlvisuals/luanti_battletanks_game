@@ -139,11 +139,11 @@ battletanks.settings = {
 
     laser_speed_multiplier     = 4,   -- laser bolt speed, as a multiple of base_speed
     laser_cooldown             = 1,   -- minimum seconds between laser shots, per racer
-    laser_lifetime             = 8,   -- seconds a bolt travels before despawning unclaimed (comfortably longer than crossing the whole arena)
+    laser_lifetime             = 6,   -- seconds a bolt travels before despawning unclaimed (comfortably longer than crossing the whole arena)
     laser_max_bounces          = 3,   -- a bolt that bounces off this many walls without hitting anything despawns instead of bouncing again
     rocket_speed_multiplier    = 2,   -- rocket speed, as a multiple of base_speed
     rocket_cooldown            = 2,   -- minimum seconds between rocket, per racer
-    rocket_lifetime            = 8,   -- seconds a rocket travels before despawning unclaimed (comfortably longer than crossing the whole arena)
+    rocket_lifetime            = 6,   -- seconds a rocket travels before despawning unclaimed (comfortably longer than crossing the whole arena)
     kill_by_shot_points        = 5,   -- bonus match points for eliminating another racer with a laser or rocket shot (on top of their own placement points)
 
     starting_laser             = 10, -- shots
@@ -155,6 +155,8 @@ battletanks.settings = {
 
     bot_count                  = 0,
     bot_behavior               = "random",
+    bot_shoot_range            = 20,
+    bot_low_ammo_threshold     = 5, -- total laser+rocket shots an aggressive bot considers "running low" - see bots.lua's decide_aggressive
 
     build_tool_range           = 10,
 }

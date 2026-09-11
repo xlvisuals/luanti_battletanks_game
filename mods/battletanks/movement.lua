@@ -49,9 +49,9 @@ end
 
 minetest.register_globalstep(function(dtime)
     local phase = lobby_system.state.phase
-    -- Racers already exist and have a turret during "countdown" (spawning
+    -- Players already exist and have a turret during "countdown" (spawning
     -- happens before the countdown starts - see lobby_system's
-    -- start_one_battler/run_countdown), so this runs then too, not just once
+    -- start_one_player/run_countdown), so this runs then too, not just once
     -- "playing" begins - otherwise the turret can't track a player's free-
     -- look until GO!, and instead visibly snaps to catch up the instant it
     -- does. Actual driving and firing stay gated to "playing" via

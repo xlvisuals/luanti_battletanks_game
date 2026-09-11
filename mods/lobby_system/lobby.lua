@@ -112,7 +112,7 @@ function lobby_system.lobby.join(name)
             minetest.chat_send_player(name, "This match is full (" .. S.max_players .. " max).")
             return
         end
-        lobby_system.lobby.start_one_battler(name, state.next_index)
+        lobby_system.lobby.start_one_player(name, state.next_index)
         state.next_index = state.next_index + 1
         local msg = format_message("joined_game", name, { index = state.next_index - 1 })
         minetest.chat_send_all(msg)
@@ -189,7 +189,7 @@ function lobby_system.lobby.start(caller_name)
 
     local i = 1
     for name, _ in pairs(lobby_snapshot) do
-        lobby_system.lobby.start_one_battler(name, i)
+        lobby_system.lobby.start_one_player(name, i)
         i = i + 1
     end
     state.next_index = count + 1
@@ -227,7 +227,7 @@ function lobby_system.lobby.start_with_confirmation(caller_name)
     return lobby_system.lobby.start(caller_name)
 end
 
-function lobby_system.lobby.start_one_battler(name, index)
+function lobby_system.lobby.start_one_player(name, index)
     local g = game()
     state.players[name] = true
     state.racer_start_us[name] = minetest.get_us_time()
@@ -266,7 +266,7 @@ function lobby_system.lobby.run_countdown(n)
     minetest.chat_send_all("Starting in " .. n .. "...")
 
     if n == S.late_join_cutoff then
-        lobby_system.gui.refresh_non_battlers()
+        lobby_system.gui.refresh_non_players()
     end
 
     minetest.after(1, function() lobby_system.lobby.run_countdown(n - 1) end)

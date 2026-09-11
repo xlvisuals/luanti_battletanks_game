@@ -172,3 +172,34 @@ end
 function battletanks.is_pit(x, z)
     return minetest.get_node({ x = x, y = S.arena_center.y, z = z }).name == "air"
 end
+
+-- Sweeps the arena for any leftover boost/shield/laser/rocket powerup
+-- node and clears it to air - a defensive safety net for whenever the
+-- in-memory tracking in powerups.lua doesn't actually know about
+-- something still sitting on the ground (e.g. the server was restarted,
+-- or shut down uncleanly, mid-match: that tracking is just a Lua table
+-- that starts fresh empty on reload, but any node it had placed is still
+-- right there in the saved world). Called at the start of every match
+-- (see on_match_prepare in match.lua) so a new match is guaranteed to
+-- begin with none of these on the map, regardless of how the previous one
+-- ended. Point powerups are untouched - those are level content placed by
+-- the map itself, not a runtime spawn, and are expected to still be there.
+local STRAY_DYNAMIC_POWERUP_NAMES = {
+    ["battletanks:powerup_boost"] = true,
+    ["battletanks:powerup_shield"] = true,
+    ["battletanks:powerup_laser"] = true,
+    ["battletanks:powerup_rocket"] = true,
+}
+
+function battletanks.clear_stray_dynamic_powerups()
+    local b = bounds()
+    local y = b.y0 + 1
+    for x = b.min_x, b.max_x do
+        for z = b.min_z, b.max_z do
+            local pos = { x = x, y = y, z = z }
+            if STRAY_DYNAMIC_POWERUP_NAMES[minetest.get_node(pos).name] then
+                minetest.set_node(pos, { name = "air" })
+            end
+        end
+    end
+end

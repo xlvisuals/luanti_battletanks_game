@@ -78,7 +78,19 @@ function battletanks.set_build_mode(name, on)
                 speed = 1, jump = 1, gravity = 0, sneak = true, sneak_glitch = false,
             })
         else
-            lobby_system.enter_idle_state(player)
+            -- Not lobby_system.enter_idle_state() here - that's meant for
+            -- the lobby's floating waiting-room state and is always
+            -- paired with a teleport to a fixed idle spot (see lobby.lua)
+            -- to make sense of gravity=0. Leaving build mode doesn't
+            -- teleport anywhere, so that left the player stuck floating
+            -- exactly wherever they were with no way to move vertically -
+            -- fly was just revoked, and there was no gravity to fall
+            -- back down with either. Restoring normal ground physics
+            -- instead lets them drop and walk around like anyone else
+            -- not currently racing.
+            player:set_physics_override({
+                speed = 1, jump = 1, gravity = 1, sneak = true, sneak_glitch = true,
+            })
         end
     end
 end

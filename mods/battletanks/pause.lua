@@ -4,7 +4,7 @@ battletanks.paused_by = nil
 
 local PAUSE_FLY_PRIVS = { fly = true, fast = true, noclip = true }
 
-local function freeze_all_battlers()
+local function freeze_all_players()
     for _, pdata in pairs(battletanks.players) do
         if pdata.alive and pdata.tank_obj then
             pdata.tank_obj:set_velocity({ x = 0, y = 0, z = 0 })
@@ -42,7 +42,7 @@ local function do_pause(name, player, pdata)
     battletanks.paused = true
     battletanks.paused_by = name
 
-    freeze_all_battlers()
+    freeze_all_players()
     freeze_all_projectiles()
 
     player:set_detach()
@@ -103,7 +103,7 @@ function battletanks.toggle_pause(name)
 
     local pdata = battletanks.players[name]
     if not (pdata and pdata.alive) then
-        return false, "You need to be an active battler in the current "
+        return false, "You need to be an active player in the current "
             .. "match to use this - it's specifically for pausing "
             .. "mid-battle, not for spectating."
     end
@@ -117,8 +117,7 @@ minetest.register_chatcommand("btpause", {
         .. "anything while paused) and grants yourself fly/fast/noclip so "
         .. "you can move the camera around freely - e.g. to line up a "
         .. "screenshot. Run again to resume. Can also be triggered by "
-        .. "pressing the Zoom key (see the note further down this file on "
-        .. "binding Zoom to a key of your choice, e.g. Q).",
+        .. "pressing the Zoom key",
     func = function(name)
         if not minetest.check_player_privs(name, { lobby_admin = true }) then
             return false, "Needs the lobby_admin priv."
