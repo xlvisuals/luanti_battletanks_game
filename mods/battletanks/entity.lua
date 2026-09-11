@@ -17,9 +17,9 @@ minetest.register_entity("battletanks:tank", {
         -- its own heading at a glance for turning to feel precise, and an
         -- elongated shape sweeps a much larger, harder-to-judge arc as it
         -- rotates than a square one does.
-        visual_size = { x = 0.8, y = 0.5, z = 0.8 },
+        visual_size = battletanks.settings.tank_visual_size,
         textures = face_textures("red"),
-        collisionbox = { -0.4, -0.25, -0.4, 0.4, 0.25, 0.4 },
+        collisionbox = { -0.5, -0.4, -0.5, 0.5, 0.4, 0.5 },
         physical = false, -- no engine collision - we do our own node-based checks
         collide_with_objects = false,
         pointable = false,
@@ -36,20 +36,22 @@ minetest.register_entity("battletanks:tank", {
 -- The turret: a separate entity that shadows the tank body's position
 -- (see spawn_turret/movement.lua) so its yaw can follow the player's
 -- actual look direction independently of the body's own cardinal-locked
--- yaw. Reuses each color's existing "_top" tank texture on every face as
--- a placeholder cube - there's no dedicated turret/barrel art yet, so this
--- at least keeps the right color per racer instead of falling back to a
--- missing-texture checkerboard. Swap `turret_textures` for real per-color
--- turret art whenever that's ready; nothing else needs to change.
+-- yaw.
 local function turret_textures(color)
-    local t = "battletanks_tank_" .. color .. "_top.png"
-    return { t, t, t, t, t, t }
+    return {
+        "battletanks_turret_" .. color .. "_top.png",    -- Y+
+        "battletanks_turret_" .. color .. "_bottom.png", -- Y-
+        "battletanks_turret_" .. color .. "_right.png",  -- X+
+        "battletanks_turret_" .. color .. "_left.png",   -- X-
+        "battletanks_turret_" .. color .. "_front.png",   -- Z-
+        "battletanks_turret_" .. color .. "_back.png",  -- Z+
+    }
 end
 
 minetest.register_entity("battletanks:turret", {
     initial_properties = {
         visual = "cube",
-        visual_size = { x = 0.22, y = 0.22, z = 0.85 }, -- long and thin, like a barrel
+        visual_size = battletanks.settings.turret_visual_size,
         textures = turret_textures("red"),
         physical = false,
         collide_with_objects = false,
@@ -106,16 +108,17 @@ function battletanks.sync_turret_to_body(pdata)
 end
 
 function battletanks.spawn_tank(player, pdata, color, pos, yaw)
-    local obj = minetest.add_entity(pos, "battletanks:tank")
+    local tank_off = battletanks.settings.tank_attach_offset
+    local obj = minetest.add_entity({x = pos.x + tank_off.x, y = pos.y  + tank_off.y, z = pos.z  + tank_off.z}, "battletanks:tank")
     if not obj then return nil end
     obj:set_properties({ textures = face_textures(color) })
     obj:set_yaw(yaw)
-    local off = battletanks.settings.tank_attach_offset
-    player:set_attach(obj, "", { x = off.x, y = off.y, z = off.z }, { x = 0, y = 0, z = 0 })
+    local player_off = battletanks.settings.player_attach_offset
+    player:set_attach(obj, "", { x = player_off.x, y = player_off.y, z = player_off.z }, { x = 0, y = 0, z = 0 })
     player:set_eye_offset({ x = 0, y = 0, z = 0 }, { x = 0, y = 0, z = 0 })
 
     pdata.saved_eye_height = player:get_properties().eye_height
-    player:set_properties({ eye_height = battletanks.settings.tank_eye_height })
+    player:set_properties({ eye_height = battletanks.settings.player_eye_height })
 
     lobby_system.hide_player_body(player)
     if not battletanks.names_hidden then

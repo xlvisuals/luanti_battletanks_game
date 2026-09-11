@@ -37,29 +37,21 @@ battletanks.settings = {
 
     tiles                     = {
         arena_boundary_silver = "battletanks_tile_silver.png",
-        arena_boundary_blue  = "battletanks_tile_blue.png",
+        arena_boundary_blue   = "battletanks_tile_blue.png",
     },
 
     -- In the same "x10" units set_attach expects (see entity.lua's
     -- turret comment) - real-world offset is this divided by 10, so
-    -- {-3, 6, 0} here is {-0.3, 0.6, 0} nodes: a little to one side and
-    -- up, but critically z=0 - directly over the body's own center along
-    -- its forward axis, not behind it. This used to be z=5 (0.5 nodes
-    -- back), inherited unchanged from the old lightcycle, where the rider
-    -- sitting toward the rear of a long bike made sense. On the tank's
-    -- now-square body that put the camera outside the hull entirely, and
-    -- more importantly meant the *view* reaching a corner and the body's
-    -- actual (server-side, grid-snapped) position reaching it were two
-    -- different moments - you'd see yourself at the corner and turn, but
-    -- the body itself, ahead of the camera, had already passed it,
-    -- reliably turning a cell late.
-    tank_attach_offset       = { x = -3, y = 6, z = 0 },
+    -- {-3, 6, 0} here is {-0.3, 0.6, 0} nodes.
+    tank_visual_size           = { x = 0.8, y = 0.5, z = 0.8 },
+    tank_attach_offset         = { x = 0, y = -0.25, z = 0 },
+    turret_visual_size         = { x = 0.22, y = 0.22, z = 0.85 }, -- long and thin, like a barrel
+    turret_attach_offset       = { x = 0, y = 0.35, z = 0 },
+    player_attach_offset       = { x = 0, y = 0.4, z = 0 },
+    player_eye_height          = 1.0,
 
-    tank_eye_height          = 1.0,
-
-    -- Placeholder until dedicated turret art exists (see entity.lua) - position
-    -- of the turret entity relative to the tank body it's attached to.
-    turret_attach_offset      = { x = 0, y = 0.3, z = 0 },
+    laser_visual_size          = { x = 0.2, y = 0.2, z = 1 }, -- elongated along its direction of travel
+    rocket_visual_size         = { x = 0.2, y = 0.2, z = 1 }, -- elongated along its direction of travel
 
     -- The world-anchored crosshair (see hud.lua's add_crosshair/
     -- update_crosshair) is placed at the actual point a shot fired right
@@ -148,7 +140,7 @@ battletanks.settings = {
     laser_speed_multiplier     = 4,   -- laser bolt speed, as a multiple of base_speed
     laser_cooldown             = 1,   -- minimum seconds between laser shots, per racer
     laser_lifetime             = 8,   -- seconds a bolt travels before despawning unclaimed (comfortably longer than crossing the whole arena)
-    laser_max_bounces          = 5,   -- a bolt that bounces off this many walls without hitting anything despawns instead of bouncing again
+    laser_max_bounces          = 3,   -- a bolt that bounces off this many walls without hitting anything despawns instead of bouncing again
     rocket_speed_multiplier    = 2,   -- rocket speed, as a multiple of base_speed
     rocket_cooldown            = 2,   -- minimum seconds between rocket, per racer
     rocket_lifetime            = 8,   -- seconds a rocket travels before despawning unclaimed (comfortably longer than crossing the whole arena)

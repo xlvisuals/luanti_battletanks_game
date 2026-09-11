@@ -71,7 +71,7 @@ local function do_resume(name, player, pdata)
     minetest.set_player_privs(name, privs)
 
     if pdata and pdata.alive and pdata.tank_obj then
-        local off = battletanks.settings.tank_attach_offset
+        local off = battletanks.settings.player_attach_offset
         player:set_attach(pdata.tank_obj, "",
             { x = off.x, y = off.y, z = off.z }, { x = 0, y = 0, z = 0 })
         player:set_physics_override({ speed = 0, jump = 0, gravity = 0 })
@@ -81,46 +81,79 @@ local function do_resume(name, player, pdata)
     return true, "[BattleTanks] Resumed."
 end
 
+-- Shared by the /btpause chat command and the keybind watcher below - the
+-- actual toggle, independent of how it was triggered. Does not check
+-- privileges itself; both callers do that first.
+function battletanks.toggle_pause(name)
+    local player = minetest.get_player_by_name(name)
+    if not player then return false, "Not connected." end
+
+    if battletanks.paused then
+        if battletanks.paused_by ~= name then
+            return false, "Already paused by " .. tostring(battletanks.paused_by)
+                .. " - only they can resume it (re-attaching only makes sense for "
+                .. "whoever was actually detached from their own tank)."
+        end
+        return do_resume(name, player, battletanks.players[name])
+    end
+
+    if lobby_system.state.phase ~= "playing" then
+        return false, "No match is currently in progress."
+    end
+
+    local pdata = battletanks.players[name]
+    if not (pdata and pdata.alive) then
+        return false, "You need to be an active battler in the current "
+            .. "match to use this - it's specifically for pausing "
+            .. "mid-battle, not for spectating."
+    end
+
+    return do_pause(name, player, pdata)
+end
+
 minetest.register_chatcommand("btpause", {
     description = "Admin-only: pause the current match (freezes every "
         .. "racer in place, nobody can be eliminated or collide with "
         .. "anything while paused) and grants yourself fly/fast/noclip so "
         .. "you can move the camera around freely - e.g. to line up a "
-        .. "screenshot. Run again to resume.",
+        .. "screenshot. Run again to resume. Can also be triggered by "
+        .. "pressing the Zoom key (see the note further down this file on "
+        .. "binding Zoom to a key of your choice, e.g. Q).",
     func = function(name)
         if not minetest.check_player_privs(name, { lobby_admin = true }) then
             return false, "Needs the lobby_admin priv."
         end
-
-        local player = minetest.get_player_by_name(name)
-        if not player then return false, "Not connected." end
-
-        if battletanks.paused then
-            if battletanks.paused_by ~= name then
-                return false, "Already paused by " .. tostring(battletanks.paused_by)
-                    .. " - only they can resume it (re-attaching only makes sense for "
-                    .. "whoever was actually detached from their own tank)."
-            end
-            return do_resume(name, player, battletanks.players[name])
-        end
-
-        if lobby_system.state.phase ~= "playing" then
-            return false, "No match is currently in progress."
-        end
-
-        local pdata = battletanks.players[name]
-        if not (pdata and pdata.alive) then
-            return false, "You need to be an active racer in the current "
-                .. "match to use this - it's specifically for pausing "
-                .. "mid-battle, not for spectating."
-        end
-
-        return do_pause(name, player, pdata)
+        return battletanks.toggle_pause(name)
     end,
 })
 
+-- Keybind support: there's no server-side API to bind an arbitrary
+-- keyboard key to a command - a mod can only react to Luanti's existing
+-- named control fields (up/down/left/right/jump/aux1/sneak/dig/place/
+-- zoom), all of which this game already uses for driving and firing
+-- *except* zoom, which is unbound by default and otherwise untouched
+-- here. Watching it for an admin's edge-triggered press is the closest
+-- thing to a real keybind available.
+local was_zoom_pressed = {} -- name -> bool, edge-trigger tracking
+
+minetest.register_globalstep(function(_dtime)
+    for name, pdata in pairs(battletanks.players) do
+        if not pdata.is_bot and pdata.alive and minetest.check_player_privs(name, { lobby_admin = true }) then
+            local player = minetest.get_player_by_name(name)
+            if player then
+                local controls = player:get_player_control()
+                if controls.zoom and not was_zoom_pressed[name] then
+                    battletanks.toggle_pause(name)
+                end
+                was_zoom_pressed[name] = controls.zoom
+            end
+        end
+    end
+end)
+
 minetest.register_on_leaveplayer(function(player)
     local name = player:get_player_name()
+    was_zoom_pressed[name] = nil
     if battletanks.paused and battletanks.paused_by == name then
         battletanks.paused = false
         battletanks.paused_by = nil

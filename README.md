@@ -168,7 +168,7 @@ further:
 - **Shield powerup** — absorbs the next laser or rocket hit that would
   otherwise derez you, instead of taking effect, consuming one charge.
 - **Laser powerup** — grants a few shots (2 by default). A laser bolt is
-  fast and precise, bouncing off walls (up to 5 times before fizzling out)
+  fast and precise, bouncing off walls (up to 3 times before fizzling out)
   and eliminating a single opponent on a direct hit — including, once
   it's bounced at least once, the shooter themselves, if unlucky enough to
   be standing in its path.
@@ -206,6 +206,7 @@ Everyone:
 - **`/bt score`** — shows your current score in chat
 - **`/bt help`** — opens the in-game help screen
 
+
 Admin-only:
 
 - **`/btspawns`** — lists every spawn point on the current map
@@ -213,7 +214,8 @@ Admin-only:
   the way that racer would
 - **`/btpause`** — pauses battle movement and grants yourself free-look
   and free-move (e.g. to line up a screenshot); run it again to resume.
-  The clock keeps running while movement is paused.
+  The clock keeps running while movement is paused. Can also be triggered
+  by a key press instead of typing the command
 - **`/bt show [score|names|battle|boost|all]`** — shows the scoreboard,
   player names above tanks, the battle counter, the boost bar, or
   everything (the default)

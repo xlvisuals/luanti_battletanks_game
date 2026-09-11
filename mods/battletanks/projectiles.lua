@@ -37,7 +37,8 @@ end
 minetest.register_entity("battletanks:laser_bolt", {
     initial_properties = {
         visual = "cube",
-        visual_size = { x = 0.35, y = 0.35, z = 1.4 }, -- elongated along its direction of travel
+        -- visual_size = { x = 0.35, y = 0.35, z = 1.4 }, -- elongated along its direction of travel
+        visual_size = battletanks.settings.laser_visual_size,
         textures = {
             "battletanks_laser_projectile.png", "battletanks_laser_projectile.png",
             "battletanks_laser_projectile.png", "battletanks_laser_projectile.png",
@@ -54,7 +55,8 @@ minetest.register_entity("battletanks:laser_bolt", {
 minetest.register_entity("battletanks:rocket", {
     initial_properties = {
         visual = "cube",
-        visual_size = { x = 0.35, y = 0.35, z = 1.4 }, -- elongated along its direction of travel
+        -- visual_size = { x = 0.35, y = 0.35, z = 1.4 }, -- elongated along its direction of travel
+        visual_size = battletanks.settings.rocket_visual_size,
         textures = {
             "battletanks_rocket_projectile.png", "battletanks_rocket_projectile.png",
             "battletanks_rocket_projectile.png", "battletanks_rocket_projectile.png",

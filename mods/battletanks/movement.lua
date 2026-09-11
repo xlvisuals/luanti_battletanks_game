@@ -8,10 +8,14 @@ function battletanks.enter_battle_physics(player)
     })
 end
 
-local function snap_to_grid(obj)
+local function snap_to_grid(obj, offset)
     local pos = obj:get_pos()
     if pos then
-        obj:set_pos(vector.round(pos))
+        local rounded = vector.round(pos)
+        if offset then
+            rounded = vector.add(rounded, offset)
+        end
+        obj:set_pos(rounded)
     end
 end
 
@@ -82,14 +86,15 @@ minetest.register_globalstep(function(dtime)
                     -- moving" assumption elsewhere is what's new for tanks.
                     -- Held off until "playing" (not during countdown), same
                     -- as driving/firing below.
+                    local tank_off = battletanks.settings.tank_attach_offset
                     if controls.left and not pdata.was_left then
                         pdata.yaw = pdata.yaw + HALF_PI
-                        snap_to_grid(obj)
+                        snap_to_grid(obj, tank_off)
                         battletanks.sync_turret_to_body(pdata) -- body position just jumped outside normal velocity integration - see the comment on this function
                     end
                     if controls.right and not pdata.was_right then
                         pdata.yaw = pdata.yaw - HALF_PI
-                        snap_to_grid(obj)
+                        snap_to_grid(obj, tank_off)
                         battletanks.sync_turret_to_body(pdata)
                     end
                     pdata.was_left = controls.left
