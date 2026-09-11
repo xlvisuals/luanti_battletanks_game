@@ -1,0 +1,28 @@
+
+local modpath = minetest.get_modpath("battletanks")
+
+dofile(modpath .. "/settings.lua")
+dofile(modpath .. "/environment.lua")
+dofile(modpath .. "/nodes.lua")
+dofile(modpath .. "/entity.lua")
+dofile(modpath .. "/arena.lua")
+dofile(modpath .. "/maps.lua")
+dofile(modpath .. "/powerups.lua")
+dofile(modpath .. "/hud.lua")
+dofile(modpath .. "/sounds.lua")
+dofile(modpath .. "/projectiles.lua")
+dofile(modpath .. "/spectate.lua")
+dofile(modpath .. "/bots.lua")
+dofile(modpath .. "/movement.lua")
+dofile(modpath .. "/match.lua")
+dofile(modpath .. "/mapbuild.lua")
+dofile(modpath .. "/pause.lua")
+dofile(modpath .. "/ui_toggle.lua")
+
+minetest.register_on_mods_loaded(function()
+    minetest.after(0, function()
+        battletanks.ensure_map_loaded()
+    end)
+end)
+
+minetest.log("action", "[battletanks] mod loaded")
