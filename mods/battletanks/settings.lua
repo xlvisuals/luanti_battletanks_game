@@ -5,7 +5,7 @@ math.randomseed(os.time())
 
 battletanks.settings = {
 
-    title                         = "BattleTanks v1.0.0",
+    title                         = "BattleTanks v1.0.1",
 
     arena_center                  = { x = 0, y = 50, z = 0 }, -- built well above ground, self-contained
     arena_size                    = 101,                      -- floor is arena_size x arena_size (101x101) - needs to be uneven for fair distances
@@ -156,6 +156,7 @@ battletanks.settings = {
     bot_count                  = 0,
     bot_behavior               = "random",
     bot_shoot_range            = 20,
+    bot_shoot_delay            = 0.5, -- seconds a bot needs a continuous clear shot on the same target before it's actually allowed to fire, simulating human aim/reaction time.
     bot_low_ammo_threshold     = 5, -- total laser+rocket shots an aggressive bot considers "running low" - see bots.lua's decide_aggressive
 
     build_tool_range           = 10,

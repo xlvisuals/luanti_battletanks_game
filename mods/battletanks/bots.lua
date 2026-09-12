@@ -301,6 +301,30 @@ local function find_nearest_enemy_pos(self_pdata, pos)
     return best_pos
 end
 
+-- Walks from pos to target in small (sub-node) steps checking for solid
+-- nodes in between - unlike path_clear above, this needs to work along an
+-- arbitrary angle (the target isn't necessarily on a cardinal direction
+-- from the shooter), so it steps by a fixed short distance rather than one
+-- whole node at a time, to avoid skipping past a thin wall at a shallow
+-- angle.
+local LOS_STEP = 0.5
+
+local function has_line_of_sight(pos, target)
+    local dx, dz = target.x - pos.x, target.z - pos.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    if dist < LOS_STEP then return true end
+    local dir = { x = dx / dist, y = 0, z = dz / dist }
+    local steps = math.floor(dist / LOS_STEP)
+    for step = 1, steps do
+        local check = vector.round(vector.add(pos, vector.multiply(dir, step * LOS_STEP)))
+        check.y = S.arena_center.y + 1
+        if is_hazard_node(minetest.get_node(check).name) then
+            return false
+        end
+    end
+    return true
+end
+
 -- Tanks aren't melee weapons: an aggressive bot stops closing in once it's
 -- within this many nodes of its target, instead of shoving its barrel into
 -- the enemy's rear bumper. It'll still turn to line up a shot at that
@@ -358,10 +382,22 @@ local function decide_aggressive(pdata, pos, dir)
         local enemy_pos = find_nearest_enemy_pos(pdata, pos)
         if enemy_pos then
             local dx, dz = enemy_pos.x - pos.x, enemy_pos.z - pos.z
-            if (dx * dx + dz * dz) <= ENGAGEMENT_RANGE * ENGAGEMENT_RANGE then
-                -- Close enough - hold this distance. Still turn to line up a
-                -- shot if steer_towards thinks that'd help, but never move
-                -- forward toward the target from here.
+            local within_engagement_range = (dx * dx + dz * dz) <= ENGAGEMENT_RANGE * ENGAGEMENT_RANGE
+
+            -- Straight-line distance alone isn't enough here: a wall
+            -- between the bot and the enemy can easily put them within
+            -- ENGAGEMENT_RANGE nodes as the crow flies while there's no
+            -- way to actually hit anything through it. Without also
+            -- checking line of sight, a bot in that spot would decide
+            -- it's "close enough" and hold position - i.e. stop dead
+            -- behind the wall - forever, since it can never get a shot
+            -- from there. Requiring line of sight before holding means it
+            -- keeps trying to path closer (below) instead.
+            if within_engagement_range and has_line_of_sight(pos, enemy_pos) then
+                -- Close enough with a clear shot - hold this distance.
+                -- Still turn to line up a shot if steer_towards thinks
+                -- that'd help, but never move forward toward the target
+                -- from here.
                 local controls = steer_towards(pos, dir, enemy_pos)
                 controls.up = false
                 return controls
@@ -402,48 +438,25 @@ end
 -- shooting is no longer restricted to "an enemy dead ahead in my lane."
 -- Instead: find the nearest enemy within bot_shoot_range, point the turret
 -- straight at them, and only actually fire if a simple line-of-sight walk
--- says nothing solid is in the way. Still a "dumb" check - no bounce-shot
--- prediction, no aiming lead on a moving target - matching the tank AI's
--- stated goal of starting simple.
-local LOS_STEP = 0.5
+-- (has_line_of_sight, above) says nothing solid is in the way. Still a
+-- "dumb" check - no bounce-shot prediction, no aiming lead on a moving
+-- target - matching the tank AI's stated goal of starting simple.
 
 local function nearest_enemy_pos_in_range(self_pdata, pos, range)
-    local best_pos, best_dist_sq = nil, range * range
-    for _, other_pdata in pairs(battletanks.players) do
+    local best_pos, best_name, best_dist_sq = nil, nil, range * range
+    for name, other_pdata in pairs(battletanks.players) do
         if other_pdata ~= self_pdata and other_pdata.alive and other_pdata.tank_obj then
             local other_pos = other_pdata.tank_obj:get_pos()
             if other_pos then
                 local dx, dz = other_pos.x - pos.x, other_pos.z - pos.z
                 local d = dx * dx + dz * dz
                 if d <= best_dist_sq then
-                    best_pos, best_dist_sq = { x = other_pos.x, y = pos.y, z = other_pos.z }, d
+                    best_pos, best_name, best_dist_sq = { x = other_pos.x, y = pos.y, z = other_pos.z }, name, d
                 end
             end
         end
     end
-    return best_pos
-end
-
--- Walks from pos to target in small (sub-node) steps checking for solid
--- nodes in between - unlike path_clear above, this needs to work along an
--- arbitrary angle (the target isn't necessarily on a cardinal direction
--- from the shooter), so it steps by a fixed short distance rather than one
--- whole node at a time, to avoid skipping past a thin wall at a shallow
--- angle.
-local function has_line_of_sight(pos, target)
-    local dx, dz = target.x - pos.x, target.z - pos.z
-    local dist = math.sqrt(dx * dx + dz * dz)
-    if dist < LOS_STEP then return true end
-    local dir = { x = dx / dist, y = 0, z = dz / dist }
-    local steps = math.floor(dist / LOS_STEP)
-    for step = 1, steps do
-        local check = vector.round(vector.add(pos, vector.multiply(dir, step * LOS_STEP)))
-        check.y = S.arena_center.y + 1
-        if is_hazard_node(minetest.get_node(check).name) then
-            return false
-        end
-    end
-    return true
+    return best_pos, best_name
 end
 
 -- Stuck detection: if a bot's tank hasn't actually moved more than a
@@ -499,14 +512,38 @@ local function apply_boost_and_shoot(pdata, pos, controls)
         controls.sneak = true -- boost is triggered by the boost key now, not by "up" (see movement.lua)
     end
 
-    local enemy_pos = nearest_enemy_pos_in_range(pdata, pos, battletanks.settings.bot_shoot_range)
-    local can_shoot = false
+    local enemy_pos, enemy_name = nearest_enemy_pos_in_range(pdata, pos, battletanks.settings.bot_shoot_range)
+    local has_los = false
     if enemy_pos then
         local dx, dz = enemy_pos.x - pos.x, enemy_pos.z - pos.z
         pdata.bot_turret_yaw = minetest.dir_to_yaw({ x = dx, y = 0, z = dz })
-        can_shoot = has_line_of_sight(pos, enemy_pos)
+        has_los = has_line_of_sight(pos, enemy_pos)
     else
         pdata.bot_turret_yaw = nil -- nothing to aim at - movement.lua falls back to body facing
+    end
+
+    -- A clear shot alone doesn't mean fire immediately: a bot needs to
+    -- hold a continuous line of sight on the *same* target for
+    -- bot_shoot_delay seconds first, simulating the moment a human needs to
+    -- actually aim rather than instantly snapping on target the frame it
+    -- becomes visible. Losing sight, or the nearest enemy changing to a
+    -- different racer, resets the buildup - re-acquiring takes the full
+    -- delay again, same as losing your aim on a target that ducked
+    -- behind cover would for a person. This matters most in open areas,
+    -- where a player has room to break sight before the delay runs out;
+    -- in a tight corridor there's usually nowhere to go anyway, so it
+    -- makes less difference there.
+    local can_shoot = false
+    if has_los then
+        if pdata.aim_lock_target ~= enemy_name or not pdata.aim_lock_start then
+            pdata.aim_lock_target = enemy_name
+            pdata.aim_lock_start = now_seconds()
+        elseif now_seconds() - pdata.aim_lock_start >= S.bot_shoot_delay then
+            can_shoot = true
+        end
+    else
+        pdata.aim_lock_target = nil
+        pdata.aim_lock_start = nil
     end
 
     if can_shoot and pdata.laser and pdata.laser > 0

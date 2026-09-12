@@ -191,7 +191,7 @@ All behaviors share the same base obstacle avoidance: look ahead along the curre
 
 Bots use shields automatically and boost automatically whenever they have charge available.
 
-Bots aim their turret independently of their body facing, exactly like a player's free mouse-look does - regardless of behavior type, every bot looks for the nearest enemy tank within 10 nodes, points its turret straight at it, and fires (laser preferred, reaching for a rocket instead whenever laser is either out of ammo or still cooling down from the last shot) as long as a clear line of sight confirms nothing's in the way. Bots do not avoid laser bolts or rockets shot at them.
+Bots aim their turret independently of their hull direction at the nearest enemy tank within 20 nodes. To simulate the time it takes a human player to aim, bots require half a second (`bot_shoot_delay`) of continuous, unbroken line of sight on the same target before they can shoot. Losing sight or switching targets resets that buildup. 
 
 The admin can choose the number of bots in a game and their behavior. Choosing "random" will assign each bot a random behavior from one of the three for the duration of the game. A bot's name shows their assigned behavior in the name: - `(p)` for passive, `(o)` for opportunistic, and `(a)` for aggressive. 
  
