@@ -1,6 +1,6 @@
 # BattleTanks
 
-![BattleTanks](screenshots/battletanks01.png)
+![BattleTanks](screenshots/battletanks00.png)
 
 A 3D multiplayer Tron-style tank battle game for [Luanti](https://www.luanti.org/)
 (formerly Minetest). Drive a tank around a maze arena, aim your turret
@@ -105,6 +105,22 @@ A crosshair marks the exact point your next shot would hit. It's anchored
 to that point in the world, not fixed to the screen, so it can appear to
 move up or down as you tilt the camera — that's intentional.
 
+### Observing and spectating
+
+Anyone connected but not currently in the match — hasn't joined yet, or
+is waiting for the next one — moves and looks around freely (fly/fast/
+noclip, granted automatically and revoked the instant they actually start
+playing) instead of being frozen in place, so you can always get a good
+view of a battle in progress even without joining it.
+
+While a battle or its countdown is running, press **Space** or
+**left-click** to attach your camera to another player's tank and watch
+from just above it — pressing again cycles to the next racer and back to 
+your own free-fly view.
+
+A player who gets derezzed automatically drops into a similar spectator
+view of whoever's still alive, cycled with **E** instead.
+
 ### Scoring
 
 Every player scores based on how long they lasted, not just the winner. The first player 
@@ -149,7 +165,7 @@ point powerup was collected - it's a battle against time to collect them as fast
 The score table shows each player's name, rank in the current battle, battle score 
 (including awarded points), and overall game score: 
 - Name : Player name.
-- RR : Battle Rank - the rank in the current battle.
+- BR : Battle Rank - the rank in the current battle.
 - RS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.
 - GS : Game Score - sum of all Battle Scores.
 
@@ -177,7 +193,7 @@ further:
   slower than a laser bolt and doesn't bounce off anything: it detonates
   on hitting either a tank or a wall, destroying a 3x3 area and
   eliminating every player caught standing in it, not just whichever it
-  directly hit.
+  directly hit  — including the shooter themselves,
 
 ### Bots
 
@@ -217,10 +233,10 @@ Admin-only:
   and free-move (e.g. to line up a screenshot); run it again to resume.
   The clock keeps running while movement is paused. Can also be triggered
   by a key press instead of typing the command
-- **`/bt show [score|names|battle|boost|all]`** — shows the scoreboard,
-  player names above tanks, the battle counter, the boost bar, or
-  everything (the default)
-- **`/bt hide [score|names|battle|boost|all]`** — hides the same
+- **`/bt show [score|names|battle|boost|messages|all]`** — shows the
+  scoreboard, player names above tanks, the battle counter, the boost bar,
+  big on-screen flash notifications, or everything (the default)
+- **`/bt hide [score|names|battle|boost|messages|all]`** — hides the same
 
 ## Building custom maps
 
@@ -264,11 +280,34 @@ current arena as a `.mts` schematic in the world folder, and it
 immediately becomes selectable from the map dropdown.
 
 
+## Debugging bot behavior
+
+Three settings in `mods/battletanks/settings.lua` exist purely to make
+testing bots easier:
+
+- **`admin_invincible`** — when `true`, anyone with the `lobby_admin`
+  priv can never be derezzed, by a shot or a pit, while playing. Shots
+  aimed at an invincible admin have no effect at all - no shield drain,
+  no kill credited to the shooter - they just don't count as a valid
+  target.
+- **`allow_bots_only_match`** — when `true`, a match can be started (and
+  will keep running) with zero human players, purely to watch bots play
+  each other.
+- **`bot_debug_logging`** — when `true`, every bot logs to the server log
+  (never chat, so it can't spam players) whenever its high-level intent
+  changes - e.g. `[BattleTanks] Bot 1 (a): hunting Bot 2`. See
+  `BOT_AI.md` for details on what gets logged and why.
+
+
 ## Screenshots
 
 ![BattleTanks](screenshots/battletanks01.png)
 
 ![BattleTanks](screenshots/battletanks02.png)
+
+![BattleTanks](screenshots/battletanks03.png)
+
+![BattleTanks](screenshots/battletanks04.png)
 
 
 ## Credits & License

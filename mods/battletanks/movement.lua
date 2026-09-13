@@ -75,7 +75,7 @@ minetest.register_globalstep(function(dtime)
                 if pdata.is_bot then
                     local pos_now = obj:get_pos()
                     local dir_now = minetest.yaw_to_dir(pdata.yaw)
-                    controls = battletanks.bots.get_controls(pdata, pos_now, dir_now)
+                    controls = battletanks.bots.get_controls(pdata, pos_now, dir_now, name)
                 else
                     controls = player:get_player_control()
                 end
@@ -210,7 +210,24 @@ minetest.register_globalstep(function(dtime)
                 local pos = obj:get_pos()
 
                 if move_dir then
-                    local ahead = vector.add(pos, vector.multiply(move_dir, S.move_check_ahead))
+                    local speed = S.base_speed * speed_mult
+                    -- Must cover at least as far as the tank is about to
+                    -- travel this tick (speed * dtime), not just a fixed
+                    -- distance - a fixed S.move_check_ahead can check less
+                    -- far than the tank is about to move whenever
+                    -- speed*dtime exceeds it, which is already true at
+                    -- ordinary tick rates once boost is factored in
+                    -- (S.move_check_ahead=0.35 vs. up to ~7.8 nodes/sec of
+                    -- boosted speed), and worse under any server slowdown
+                    -- that stretches dtime out further - letting the tank
+                    -- travel past what was actually verified clear before
+                    -- the next tick's check catches up, i.e. overshooting
+                    -- into a wall instead of stopping cleanly at its edge.
+                    -- The original S.move_check_ahead value is kept as a
+                    -- flat margin on top, for some buffer even at low
+                    -- speed (e.g. reverse).
+                    local check_dist = speed * dtime + S.move_check_ahead
+                    local ahead = vector.add(pos, vector.multiply(move_dir, check_dist))
                     local ahead_rounded = vector.round(ahead)
                     ahead_rounded.y = S.arena_center.y + 1
                     local node = minetest.get_node(ahead_rounded)
@@ -243,7 +260,6 @@ minetest.register_globalstep(function(dtime)
                         -- a shot can derez someone now (see projectiles.lua).
                         obj:set_velocity({ x = 0, y = 0, z = 0 })
                     else
-                        local speed = S.base_speed * speed_mult
                         obj:set_velocity({ x = move_dir.x * speed, y = 0, z = move_dir.z * speed })
                     end
                 else

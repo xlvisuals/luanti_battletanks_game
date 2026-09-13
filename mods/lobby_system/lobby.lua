@@ -160,8 +160,8 @@ function lobby_system.lobby.start(caller_name)
         return false, "A match is already in progress."
     end
     local count = count_keys(state.lobby)
-    if count < 1 then
-        return false, "Need at least 1 player in the lobby (use join)."
+    if count < 1 and not S.allow_empty_lobby_start then
+        return false, "Need at least 1 player (use join)."
     end
     if count < S.min_players then
         local is_admin = caller_name and minetest.check_player_privs(caller_name, { lobby_admin = true })
@@ -206,8 +206,8 @@ function lobby_system.lobby.start_with_confirmation(caller_name)
         return false, "A match is already in progress."
     end
     local count = count_keys(state.lobby)
-    if count < 1 then
-        return false, "Need at least 1 player in the lobby (use join)."
+    if count < 1 and not S.allow_empty_lobby_start then
+        return false, "Need at least 1 player (use join)."
     end
 
     local is_admin = caller_name and minetest.check_player_privs(caller_name, { lobby_admin = true })
@@ -241,6 +241,7 @@ function lobby_system.lobby.start_one_player(name, index)
     local player = minetest.get_player_by_name(name)
     if player then
         lobby_system.sounds.stop_lobby_loop(name)
+        lobby_system.exit_idle_state(player) -- strips the fly/fast/noclip idle/observer got - see enter_idle_state's comment
     end
     g.on_match_start(name, index, pos, yaw)
 end

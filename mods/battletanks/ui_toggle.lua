@@ -1,6 +1,7 @@
 
 battletanks.names_hidden = false
 battletanks.boost_hidden = false
+battletanks.messages_hidden = false
 
 local function set_boost_hidden(hidden)
     battletanks.boost_hidden = hidden
@@ -36,6 +37,16 @@ local function set_names_hidden(hidden)
     end
 end
 
+-- Every big on-screen flash notification (lobby_system.hud.flash_all) -
+-- eliminations, "GO!", win announcements, all of it - handy to turn off
+-- right before lining up a screenshot, which any of those would
+-- otherwise cover. The matching chat messages and sounds are untouched,
+-- so everything is still tracked/audible, just not covering the screen.
+local function set_messages_hidden(hidden)
+    battletanks.messages_hidden = hidden
+    lobby_system.hide_flash_messages = hidden
+end
+
 local UI_ELEMENTS = {
     score = function(hidden)
         lobby_system.hud.set_scoreboard_hidden(hidden)
@@ -44,6 +55,7 @@ local UI_ELEMENTS = {
     battle = function(hidden) lobby_system.hud.set_match_counter_hidden(hidden) end,
     names = set_names_hidden,
     boost = set_boost_hidden,
+    messages = set_messages_hidden,
 }
 
 function battletanks.handle_ui_command(name, param)

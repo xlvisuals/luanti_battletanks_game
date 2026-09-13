@@ -3,6 +3,26 @@ battletanks.bots = {}
 
 local S = battletanks.settings
 
+local function now_seconds()
+    return minetest.get_us_time() / 1000000
+end
+
+-- Debugging aid (see settings.lua's bot_debug_logging, off by default) -
+-- logs to the server log (not chat, so it never spams players) whenever a
+-- bot's high-level intent changes, so "why did it just do that" can be
+-- answered by reading the log afterward instead of having to guess from
+-- watching behavior alone. Deliberately only logs on an actual *change* of
+-- state, not every tick - logging every tick for every bot would be
+-- enormous and useless. `pdata.name` is set once per tick in get_controls.
+local function set_bot_state(pdata, state)
+    if pdata.bot_state == state then return end
+    pdata.bot_state = state
+    if S.bot_debug_logging then
+        minetest.log("action", "[BattleTanks] " .. (pdata.name or "?")
+            .. " (" .. (pdata.bot_behavior or "?") .. "): " .. state)
+    end
+end
+
 local ALL_BEHAVIORS = { "passive", "opportunistic", "aggressive" }
 
 lobby_system.set_extra_known_names_fn(function()
@@ -33,6 +53,21 @@ function battletanks.bots.behavior_letter(behavior)
     return behavior:sub(1, 1)
 end
 
+-- How far ahead (nodes) every strategic wall-check in this file looks
+-- before deciding a direction is safe to commit to. Used to be 3, which
+-- turned out to not be nearly enough buffer: at base_speed with boost
+-- (~7.8 nodes/sec) a single tick can already cover more than a node, and
+-- under any server slowdown - more likely the busier a match gets, e.g.
+-- several bots all doing this same computation during a firefight - a
+-- tick can cover much more than that. A wall sitting just past the old
+-- 3-node range would go completely undetected until it was already close
+-- enough that there were only one or two ticks left to react, which
+-- wasn't reliably enough to turn away in time. It also happened to
+-- exactly equal STUCK_REVERSE_DISTANCE (also 3) below, which caused its
+-- own specific bug: backing up exactly as far as the detection range let
+-- a bot "see" the very wall it just fled from as clear again, immediately
+-- walking back into it - see the comment on STUCK_REVERSE_DISTANCE and
+-- POST_ESCAPE_LOCK_DURATION.
 local LOOKAHEAD = 3
 
 local OPPORTUNISTIC_RANGE = 10
@@ -58,82 +93,261 @@ local function path_clear(pos, dir, dist)
     return true
 end
 
-local MAX_OPENNESS_SEARCH = 20
+local function powerup_still_at(target)
+    local check = vector.round(target)
+    check.y = S.arena_center.y + 1
+    local n = minetest.get_node(check).name
+    return n == "battletanks:powerup_point" or n == "battletanks:powerup_boost"
+        or n == "battletanks:powerup_shield" or n == "battletanks:powerup_laser"
+        or n == "battletanks:powerup_rocket"
+end
 
-local function measure_openness(pos, dir)
-    for step = 1, MAX_OPENNESS_SEARCH do
-        local check = vector.round(vector.add(pos, vector.multiply(dir, step)))
-        check.y = S.arena_center.y + 1
-        if is_hazard_or_pit_at(check) then
-            return step - 1
+-- Cheap "don't drive right past free stuff" check: if a powerup happens
+-- to be sitting in the cell immediately to the bot's left or right, turn
+-- straight toward it. Rounds to the bot's current cell first rather than
+-- using its raw, continuously-changing position - that's what fixed an
+-- earlier jitter bug here, where a fractional position could flicker in
+-- and out of detecting the very same powerup as the bot inched forward,
+-- producing repeated contradictory turns. Deliberately a direct turn, not
+-- routed through the general LOOKAHEAD-node clearance check everything
+-- else uses: that's meant for committing to several nodes of travel
+-- toward a distant target, and is far too strict for a target that's
+-- only ever 1 node away - if anything at all sits 2-3 nodes past the
+-- powerup (extremely common; powerups often sit near a wall or in a
+-- small alcove), that check would judge the whole direction "unsafe" and
+-- refuse to turn, even though the powerup itself is perfectly reachable.
+--
+-- Still checks one node past the powerup, though - not zero: a powerup
+-- tucked right up against a wall (also extremely common) would otherwise
+-- turn the bot straight into that wall the instant it reaches the
+-- powerup. One extra node of clearance catches that specific case without
+-- being as over-strict as the full multi-node check would be.
+--
+-- `ignore_cell` excludes one specific powerup from consideration -
+-- decide_direction passes its own current target here. Without that, a bot
+-- driving straight at a target it's *already* deliberately heading for
+-- would see that same powerup become "adjacent" during the final approach
+-- (dead ahead isn't exactly the same cell as beside, right up until the
+-- last step) and swerve for it - fighting with the ordinary target-seeking
+-- logic over the exact same goal, tick after tick, since each swerve turn
+-- changes the heading enough that the target then reads as adjacent again
+-- from the new angle. Excluding the current target here isn't a loss - the
+-- bot was already headed straight for it anyway.
+--
+-- Checked directly inside decide_direction (below), not as a separate
+-- bolted-on check consulted only when the main decision left things
+-- "neutral" - and not locked in afterward the way an earlier version of
+-- this needed to be, since that was only ever a workaround for
+-- decide_direction's old wrong-reference-frame bug reversing it a tick
+-- later; the fixed version naturally leaves the bot facing the powerup
+-- once it turns, and re-evaluating fresh next tick correctly finds
+-- nothing left to swerve for.
+local function adjacent_powerup_side(prev_pos, pos, dir, ignore_cell)
+    local left_dir = { x = -dir.z, y = 0, z = dir.x }
+    local right_dir = { x = dir.z, y = 0, z = -dir.x }
+    local ignore_rounded = ignore_cell and vector.round(ignore_cell)
+
+    local function safe_to_swerve(side_dir, cell)
+        local powerup_cell = vector.round(vector.add(cell, side_dir))
+        -- x/z only, deliberately: powerup_cell's y comes from the sweep's
+        -- sample point (the bot's own current elevation), not from the
+        -- powerup's actual placement height, so comparing all three axes
+        -- via vector.equals could fail to match ignore_cell even when x/z
+        -- line up exactly - this whole check only ever cares about the
+        -- horizontal grid position anyway.
+        if ignore_rounded and powerup_cell.x == ignore_rounded.x and powerup_cell.z == ignore_rounded.z then
+            return false
+        end
+        if not powerup_still_at(powerup_cell) then return false end
+        local beyond = vector.round(vector.add(powerup_cell, side_dir))
+        beyond.y = S.arena_center.y + 1
+        return not is_hazard_or_pit_at(beyond)
+    end
+
+    -- Samples the path between last tick's position and this tick's,
+    -- rather than only the current instantaneous cell, in case a single
+    -- tick's movement covers more than a full node - easily possible
+    -- while boosting or under any server slowdown. Checking only the
+    -- current cell could skip clean over the one row where an adjacent
+    -- powerup would've been detected, exactly the way a fast-moving
+    -- projectile can skip past a target between two single-point checks -
+    -- see projectiles.lua's sweep_hit, which this mirrors.
+    local SWEEP_STEP = 0.5
+    local dx, dz = pos.x - prev_pos.x, pos.z - prev_pos.z
+    local dist = math.sqrt(dx * dx + dz * dz)
+    local steps = math.min(40, math.max(1, math.ceil(dist / SWEEP_STEP))) -- capped defensively - normal per-tick movement never gets close to this
+    local last_cell = nil
+
+    for step = 0, steps do
+        local t = step / steps
+        local sample = { x = prev_pos.x + dx * t, y = pos.y, z = prev_pos.z + dz * t }
+        local cell = vector.round(sample)
+        if not last_cell or cell.x ~= last_cell.x or cell.z ~= last_cell.z then
+            last_cell = cell
+            if safe_to_swerve(left_dir, cell) then return "left" end
+            if safe_to_swerve(right_dir, cell) then return "right" end
         end
     end
-    return MAX_OPENNESS_SEARCH
+
+    return nil
+end
+
+-- The core steering rule, used by every behavior whether it's actively
+-- pursuing a target or just wandering (target == nil):
+--   1. Never drive into a wall or pit - if going straight is blocked
+--      within LOOKAHEAD nodes, turn instead.
+--   2. Never turn toward a wall or pit either - a turn candidate that's
+--      itself blocked isn't a valid choice.
+--   3. Prefer whichever safe direction actually makes progress toward
+--      `target`, if one is given.
+--   4. If neither safe direction makes progress (or there's no target),
+--      there is no other preference. This is a deliberate simplification
+--      from an earlier version of this file: LightCycles favored turning
+--      toward more open space, to leave itself more room to maneuver
+--      around its own trail, and that heuristic (measure_openness,
+--      find_wall_gap_distance) got carried over here even though
+--      BattleTanks has no trail and no equivalent reason to prefer one
+--      open direction over another - every safe direction is exactly as
+--      good as any other. That heuristic's own borderline comparisons
+--      (which side has *slightly* more open floor, or finds a gap one
+--      step sooner) were themselves the root cause of several of the
+--      worst bugs here (see BOT_AI.md): they needed increasingly
+--      elaborate commitment/hysteresis machinery just to stop their own
+--      near-ties from flip-flopping, and that machinery is what actually
+--      broke (wrong reference frames after a turn, mismatched commitment
+--      durations between layers, etc). Removing the preference removes
+--      the comparison entirely, which removes the entire category of
+--      problem - there's nothing left that can be unstable. Each bot gets
+--      a fixed, random-at-spawn tiebreak_left so an otherwise-symmetric
+--      choice is still deterministic and stable for that specific bot (no
+--      per-tick randomness, no oscillation risk), without every bot
+--      making the identical choice in a symmetric situation.
+-- How long a triggered swerve commits to its chosen direction before
+-- anything else (specifically, whatever target-pursuit logic called
+-- decide_direction with a *different* target) is allowed to override it -
+-- see the swerve rule's own comment inside decide_direction for why this
+-- is necessary again despite the redesign that removed the original
+-- version of this lock.
+local SWERVE_LOCK_DURATION = 1.0
+
+local function decide_direction(pdata, pos, dir, target)
+    if pdata.turn_tiebreak_left == nil then
+        pdata.turn_tiebreak_left = math.random() < 0.5
+    end
+
+    -- Rule: grab a powerup immediately beside the path, unless swerving
+    -- for it isn't actually safe (adjacent_powerup_side's own job) - ahead
+    -- of target-pursuit below, so a bot doesn't pass up something free
+    -- just because it was already turning toward a farther-off goal. The
+    -- current target itself is excluded (see adjacent_powerup_side's
+    -- comment) - the bot's already heading straight for it.
+    --
+    -- Also sets a brief lock (see get_controls, SWERVE_LOCK_DURATION):
+    -- this powerup is *not* the current target, so on the very next tick
+    -- the target-pursuit logic below would see the swerve's turn as having
+    -- moved away from its own goal and turn straight back - putting this
+    -- same powerup adjacent again and re-triggering the swerve, forever.
+    -- Committing to the swerve for a moment lets it actually finish before
+    -- target-pursuit gets a chance to fight it over which way is correct.
+    local swerve = adjacent_powerup_side(pdata.swerve_prev_pos or pos, pos, dir, target)
+    if swerve then
+        set_bot_state(pdata, "swerving for a powerup")
+        pdata.swerve_lock_until = now_seconds() + SWERVE_LOCK_DURATION
+        return { [swerve] = true }
+    end
+
+    local left_dir = { x = -dir.z, y = 0, z = dir.x }
+    local right_dir = { x = dir.z, y = 0, z = -dir.x }
+
+    if target then
+        local dx, dz = target.x - pos.x, target.z - pos.z
+        -- Only need to verify the path is clear as far as the target
+        -- itself, not the full LOOKAHEAD - a target closer than LOOKAHEAD
+        -- (the normal case once actually approaching one) can easily have
+        -- something else within that longer range without that being in
+        -- the way of reaching the target at all. Point powerups in
+        -- particular are frequently placed at the end of a dead-end
+        -- alcove as an exploration reward - the alcove's own back wall,
+        -- sitting just past the target, would otherwise make the full
+        -- LOOKAHEAD check fail and turn the bot away consistently (via
+        -- turn_tiebreak_left, so not randomly - a deliberate-looking
+        -- "avoidance") even though getting to the target itself, a couple
+        -- of nodes short of that wall, was never actually unsafe.
+        local target_dist = math.sqrt(dx * dx + dz * dz)
+        local check_dist = math.max(1, math.min(LOOKAHEAD, math.ceil(target_dist)))
+
+        if path_clear(pos, dir, check_dist) and (dir.x * dx + dir.z * dz) > 0 then
+            return {}
+        end
+        if path_clear(pos, left_dir, check_dist) and (left_dir.x * dx + left_dir.z * dz) > 0 then
+            return { left = true }
+        end
+        if path_clear(pos, right_dir, check_dist) and (right_dir.x * dx + right_dir.z * dz) > 0 then
+            return { right = true }
+        end
+    end
+
+    -- Below this point there's no target-specific goal left to reach (or
+    -- the checks above found no safe way to make progress toward it this
+    -- tick), so fall back to plain obstacle avoidance using the full
+    -- LOOKAHEAD - there's no short-range destination to cap the check at
+    -- any more.
+    local straight_clear = path_clear(pos, dir, LOOKAHEAD)
+    local left_clear = path_clear(pos, left_dir, LOOKAHEAD)
+    local right_clear = path_clear(pos, right_dir, LOOKAHEAD)
+
+    if straight_clear then
+        return {}
+    elseif left_clear and right_clear then
+        return pdata.turn_tiebreak_left and { left = true } or { right = true }
+    elseif left_clear then
+        return { left = true }
+    elseif right_clear then
+        return { right = true }
+    end
+
+    return nil -- boxed in on every side
 end
 
 local function decide_passive(pdata, pos, dir)
     local controls = battletanks.bots.seek_point_powerup(pdata, pos, dir)
     if controls then return controls end
 
-    if path_clear(pos, dir, LOOKAHEAD) then
-        return {} -- nothing blocking - keep going straight
-    end
+    set_bot_state(pdata, "wandering")
 
-    local left_dir = { x = -dir.z, y = 0, z = dir.x }
-    local right_dir = { x = dir.z, y = 0, z = -dir.x }
-
-    local left_clear = path_clear(pos, left_dir, LOOKAHEAD)
-    local right_clear = path_clear(pos, right_dir, LOOKAHEAD)
-
-    local turn_left
-    if left_clear and not right_clear then
-        turn_left = true
-    elseif right_clear and not left_clear then
-        turn_left = false
-    elseif left_clear and right_clear then
-        local left_open = measure_openness(pos, left_dir)
-        local right_open = measure_openness(pos, right_dir)
-        if left_open == right_open then
-            turn_left = math.random() < 0.5
-        else
-            turn_left = left_open > right_open
-        end
-    else
-        turn_left = math.random() < 0.5 -- both blocked - trapped either way, pick one
-    end
-
-    return turn_left and { left = true } or { right = true }
+    return decide_direction(pdata, pos, dir, nil)
+        or (math.random() < 0.5 and { left = true } or { right = true }) -- boxed in - stuck-escape will sort it out if this doesn't help either
 end
 
 local function find_nearest_powerup(pos, range)
-    local best_pos, best_dist_sq = nil, range and (range * range) or math.huge
+    local best_pos, best_type, best_dist_sq = nil, nil, range and (range * range) or math.huge
 
-    local function consider(p)
+    local function consider(p, ptype)
         if not p then return end
         local dx, dz = p.x - pos.x, p.z - pos.z
         local d = dx * dx + dz * dz
         if d <= best_dist_sq then
-            best_pos, best_dist_sq = p, d
+            best_pos, best_type, best_dist_sq = p, ptype, d
         end
     end
 
     for _, p in ipairs(battletanks.get_active_point_powerup_positions()) do
-        consider(p)
+        consider(p, "point")
     end
     for _, p in ipairs(battletanks.get_active_boost_powerup_positions()) do
-        consider(p)
+        consider(p, "boost")
     end
     for _, p in ipairs(battletanks.get_active_shield_powerup_positions()) do
-        consider(p)
+        consider(p, "shield")
     end
     for _, p in ipairs(battletanks.get_active_laser_powerup_positions()) do
-        consider(p)
+        consider(p, "laser")
     end
     for _, p in ipairs(battletanks.get_active_rocket_powerup_positions()) do
-        consider(p)
+        consider(p, "rocket")
     end
 
-    return best_pos
+    return best_pos, best_type
 end
 
 -- Point powerups only, unrelated range (in practice, a maze is usually
@@ -189,41 +403,28 @@ local function find_nearest_shield_powerup(pos)
     return best_pos
 end
 
-local function powerup_still_at(target)
-    local check = vector.round(target)
-    check.y = S.arena_center.y + 1
-    local n = minetest.get_node(check).name
-    return n == "battletanks:powerup_point" or n == "battletanks:powerup_boost"
-        or n == "battletanks:powerup_shield" or n == "battletanks:powerup_laser"
-        or n == "battletanks:powerup_rocket"
-end
-
-local function steer_towards(pos, dir, target)
+-- Thin wrapper around decide_direction that adds the one thing specific
+-- to chasing a point-like target: recognizing "we've basically arrived."
+local function steer_towards(pdata, pos, dir, target)
     local dx = target.x - pos.x
     local dz = target.z - pos.z
     if math.abs(dx) < 0.5 and math.abs(dz) < 0.5 then
-        return {}, true -- close enough that pickup detection will catch it
+        -- Close enough that pickup detection (check_powerup_pickup, which
+        -- checks the tank's own rounded position every tick regardless of
+        -- what this function decides) will catch it on its own - hold
+        -- here rather than continuing forward. Point powerups are level
+        -- content and are often placed at the end of a dead-end alcove as
+        -- an exploration reward, meaning there's frequently a wall
+        -- directly behind the target - blindly continuing forward here
+        -- drove the bot straight through the pickup and into that wall.
+        return { up = false }, true
     end
 
-    local left_dir = { x = -dir.z, y = 0, z = dir.x }
-    local right_dir = { x = dir.z, y = 0, z = -dir.x }
-
-    local straight_helps = (dir.x * dx + dir.z * dz) > 0
-    if straight_helps and path_clear(pos, dir, LOOKAHEAD) then
-        return {}, true
+    local controls = decide_direction(pdata, pos, dir, target)
+    if controls then
+        return controls, true
     end
-
-    local left_helps = (left_dir.x * dx + left_dir.z * dz) > 0
-    local right_helps = (right_dir.x * dx + right_dir.z * dz) > 0
-
-    if left_helps and path_clear(pos, left_dir, LOOKAHEAD) then
-        return { left = true }, true
-    end
-    if right_helps and path_clear(pos, right_dir, LOOKAHEAD) then
-        return { right = true }, true
-    end
-
-    return nil, false
+    return nil, false -- boxed in on every side - genuinely nothing to do here
 end
 
 -- Shared by both decide_passive (directly) and decide_opportunistic (as a
@@ -242,8 +443,9 @@ function battletanks.bots.seek_point_powerup(pdata, pos, dir)
     end
 
     if pdata.point_target then
-        local controls, still_useful = steer_towards(pos, dir, pdata.point_target)
+        local controls, still_useful = steer_towards(pdata, pos, dir, pdata.point_target)
         if still_useful then
+            set_bot_state(pdata, "chasing point powerup")
             return controls
         end
         pdata.point_target = nil -- path blocked - give up on this one
@@ -258,12 +460,13 @@ local function decide_opportunistic(pdata, pos, dir)
     end
 
     if not pdata.bot_target then
-        pdata.bot_target = find_nearest_powerup(pos, OPPORTUNISTIC_RANGE)
+        pdata.bot_target, pdata.bot_target_type = find_nearest_powerup(pos, OPPORTUNISTIC_RANGE)
     end
 
     if pdata.bot_target then
-        local controls, still_useful = steer_towards(pos, dir, pdata.bot_target)
+        local controls, still_useful = steer_towards(pdata, pos, dir, pdata.bot_target)
         if still_useful then
+            set_bot_state(pdata, "chasing nearby " .. (pdata.bot_target_type or "powerup") .. " powerup")
             return controls
         end
         pdata.bot_target = nil -- path blocked - give up on this one, same as "obstacle encountered"
@@ -285,20 +488,20 @@ end
 -- which are cached until collected/expired) since enemy tanks are always
 -- moving.
 local function find_nearest_enemy_pos(self_pdata, pos)
-    local best_pos, best_dist_sq = nil, math.huge
-    for _, other_pdata in pairs(battletanks.players) do
+    local best_pos, best_name, best_dist_sq = nil, nil, math.huge
+    for other_name, other_pdata in pairs(battletanks.players) do
         if other_pdata ~= self_pdata and other_pdata.alive and other_pdata.tank_obj then
             local other_pos = other_pdata.tank_obj:get_pos()
             if other_pos then
                 local dx, dz = other_pos.x - pos.x, other_pos.z - pos.z
                 local d = dx * dx + dz * dz
                 if d < best_dist_sq then
-                    best_pos, best_dist_sq = { x = other_pos.x, y = pos.y, z = other_pos.z }, d
+                    best_pos, best_name, best_dist_sq = { x = other_pos.x, y = pos.y, z = other_pos.z }, other_name, d
                 end
             end
         end
     end
-    return best_pos
+    return best_pos, best_name
 end
 
 -- Walks from pos to target in small (sub-node) steps checking for solid
@@ -331,6 +534,17 @@ end
 -- range - see decide_aggressive - just without driving any closer.
 local ENGAGEMENT_RANGE = 3
 
+-- If two bots (or a bot and a player) are both closing in on each other
+-- at once, checking the distance only once per tick, before that tick's
+-- movement happens, isn't enough to reliably stop right at
+-- ENGAGEMENT_RANGE - their combined closing speed can carry them past it
+-- within a single tick, and by the time the check reflects that they're
+-- already too close, "holding position" at a too-close distance doesn't
+-- actually create any breathing room. Falling below this tighter
+-- threshold triggers an active back-off instead of just holding - see
+-- decide_aggressive.
+local MIN_ENGAGEMENT_RANGE = 2
+
 -- Shared by the ammo/shield-seeking priorities below - keeps its own
 -- cached target under pdata[cache_key], separate from pdata.bot_target
 -- (the generic "any powerup" fallback further down) and pdata.point_target
@@ -346,7 +560,7 @@ local function seek_cached(pdata, pos, dir, cache_key, finder)
     end
 
     if pdata[cache_key] then
-        local controls, still_useful = steer_towards(pos, dir, pdata[cache_key])
+        local controls, still_useful = steer_towards(pdata, pos, dir, pdata[cache_key])
         if still_useful then
             return controls
         end
@@ -365,13 +579,19 @@ local function decide_aggressive(pdata, pos, dir)
     -- take a hit or two without a shield.
     if total_ammo < S.bot_low_ammo_threshold then
         local controls = seek_cached(pdata, pos, dir, "ammo_target", find_nearest_ammo_powerup)
-        if controls then return controls end
+        if controls then
+            set_bot_state(pdata, "seeking ammo (" .. total_ammo .. " left)")
+            return controls
+        end
     end
 
     -- Priority 2: pick up a shield if completely out of them.
     if not (pdata.shield and pdata.shield > 0) then
         local controls = seek_cached(pdata, pos, dir, "shield_target", find_nearest_shield_powerup)
-        if controls then return controls end
+        if controls then
+            set_bot_state(pdata, "seeking shield")
+            return controls
+        end
     end
 
     -- Priority 3: hunt, same as before - only actually worth doing with
@@ -379,10 +599,35 @@ local function decide_aggressive(pdata, pos, dir)
     -- happens otherwise (also covers the case where the map has simply
     -- run out of ammo powerups to find).
     if total_ammo > 0 then
-        local enemy_pos = find_nearest_enemy_pos(pdata, pos)
+        local enemy_pos, enemy_name = find_nearest_enemy_pos(pdata, pos)
         if enemy_pos then
             local dx, dz = enemy_pos.x - pos.x, enemy_pos.z - pos.z
-            local within_engagement_range = (dx * dx + dz * dz) <= ENGAGEMENT_RANGE * ENGAGEMENT_RANGE
+            local dist_sq = dx * dx + dz * dz
+
+            if dist_sq < MIN_ENGAGEMENT_RANGE * MIN_ENGAGEMENT_RANGE then
+                -- Way too close, most likely from both sides closing in
+                -- fast at once (see MIN_ENGAGEMENT_RANGE's comment) -
+                -- actively back off to a safer distance rather than just
+                -- holding still right on top of the other tank. Aims for
+                -- a point straight out past the ideal standoff distance,
+                -- in whichever direction is already away from the
+                -- threat, and reuses the same steer_towards logic
+                -- everything else does to actually get there - more
+                -- reliable than picking a random direction, since this is
+                -- guaranteed to move away from the *actual* threat rather
+                -- than a coin flip that could just as easily go straight
+                -- at it.
+                local dist = math.sqrt(dist_sq)
+                local away_dir = dist > 0.01 and { x = -dx / dist, y = 0, z = -dz / dist } or dir
+                local flee_point = vector.add(pos, vector.multiply(away_dir, ENGAGEMENT_RANGE + 2))
+                local controls, still_useful = steer_towards(pdata, pos, dir, flee_point)
+                if still_useful then
+                    set_bot_state(pdata, "backing off from " .. (enemy_name or "enemy"))
+                    return controls
+                end
+                -- Boxed in even for backing off - fall through to
+                -- holding/aiming instead, since there's nowhere to flee to.
+            end
 
             -- Straight-line distance alone isn't enough here: a wall
             -- between the bot and the enemy can easily put them within
@@ -393,18 +638,20 @@ local function decide_aggressive(pdata, pos, dir)
             -- behind the wall - forever, since it can never get a shot
             -- from there. Requiring line of sight before holding means it
             -- keeps trying to path closer (below) instead.
-            if within_engagement_range and has_line_of_sight(pos, enemy_pos) then
+            if dist_sq <= ENGAGEMENT_RANGE * ENGAGEMENT_RANGE and has_line_of_sight(pos, enemy_pos) then
                 -- Close enough with a clear shot - hold this distance.
                 -- Still turn to line up a shot if steer_towards thinks
                 -- that'd help, but never move forward toward the target
                 -- from here.
-                local controls = steer_towards(pos, dir, enemy_pos)
+                local controls = steer_towards(pdata, pos, dir, enemy_pos)
                 controls.up = false
+                set_bot_state(pdata, "engaging " .. (enemy_name or "enemy"))
                 return controls
             end
 
-            local controls, still_useful = steer_towards(pos, dir, enemy_pos)
+            local controls, still_useful = steer_towards(pdata, pos, dir, enemy_pos)
             if still_useful then
+                set_bot_state(pdata, "hunting " .. (enemy_name or "enemy"))
                 return controls
             end
             -- Blocked this tick - fall through to powerup-seeking/wandering
@@ -418,13 +665,14 @@ local function decide_aggressive(pdata, pos, dir)
 
     local generation = battletanks.powerup_spawn_generation
     if not pdata.bot_target or pdata.bot_target_generation ~= generation then
-        pdata.bot_target = find_nearest_powerup(pos, nil)
+        pdata.bot_target, pdata.bot_target_type = find_nearest_powerup(pos, nil)
         pdata.bot_target_generation = generation
     end
 
     if pdata.bot_target then
-        local controls, still_useful = steer_towards(pos, dir, pdata.bot_target)
+        local controls, still_useful = steer_towards(pdata, pos, dir, pdata.bot_target)
         if still_useful then
+            set_bot_state(pdata, "chasing " .. (pdata.bot_target_type or "powerup") .. " (no target to fight)")
             return controls
         end
         pdata.bot_target = nil -- path blocked - give up on this one, same as opportunistic
@@ -472,9 +720,21 @@ local STUCK_MOVE_THRESHOLD = 0.3   -- nodes; movement below this still counts as
 local STUCK_REVERSE_DISTANCE = 3   -- nodes to back up before turning
 local STUCK_REVERSE_TIMEOUT = 3.0  -- safety cap (seconds) in case reversing is also blocked
 
-local function now_seconds()
-    return minetest.get_us_time() / 1000000
-end
+-- After the escape's turn, commit to driving straight in that new
+-- direction for this long, rather than letting normal decision-making
+-- reconsider it immediately. Without this, backing up STUCK_REVERSE_DISTANCE
+-- nodes and turning could still walk straight back into the very wall
+-- just escaped: from the new, backed-up position, a fresh check of the
+-- *original* direction can find it "clear" again simply because backing
+-- up moved the wall outside checking range - a target re-selected right
+-- back in that direction (or even plain wall-avoidance re-evaluating
+-- from scratch) could then turn straight back toward it, having gained
+-- nothing from backing up at all. Only held onto as long as the new
+-- direction is actually still drivable (re-checked every tick) - if that
+-- turns out to be blocked too, this gives up immediately rather than
+-- insisting on it, which would otherwise just trade one stuck wall for
+-- another.
+local POST_ESCAPE_LOCK_DURATION = 1.5
 
 -- Only meaningful while the bot is actually trying to drive - an
 -- aggressive bot deliberately holding its engagement range on purpose
@@ -557,11 +817,35 @@ local function apply_boost_and_shoot(pdata, pos, controls)
     return controls
 end
 
-function battletanks.bots.get_controls(pdata, pos, dir)
+-- Cleared whenever a stuck-escape maneuver actually fires (see
+-- get_controls' "turning" phase below) - every long-range or cached
+-- target a bot might currently be committed to, across every behavior.
+-- Getting stuck isn't just "briefly blocked" (that resolves on its own
+-- every tick via the normal steering above) - it means 2 full seconds
+-- passed without meaningful progress toward whatever it was heading for,
+-- which is a real sign that particular target needs actual pathfinding
+-- to reach (e.g. it requires a detour around something like the outer
+-- boundary) that this "dumb," purely local/greedy steering was never
+-- meant to solve. Without clearing it, the bot would go right back to
+-- attempting the exact same doomed approach the instant the escape
+-- finished, likely getting stuck again shortly after - which is what
+-- turned a single failed approach into what looked like several seconds
+-- of jittering.
+local function abandon_all_targets(pdata)
+    pdata.point_target = nil
+    pdata.bot_target = nil
+    pdata.ammo_target = nil
+    pdata.shield_target = nil
+end
+
+function battletanks.bots.get_controls(pdata, pos, dir, name)
+    pdata.name = name
+
     -- An escape maneuver in progress overrides normal decision-making
     -- entirely, in either of its two phases (see update_stuck_escape for
     -- how "reversing" gets triggered).
     if pdata.stuck_escape_phase == "reversing" then
+        set_bot_state(pdata, "stuck - backing up")
         local traveled = vector.distance(pos, pdata.stuck_escape_start_pos)
         if traveled < STUCK_REVERSE_DISTANCE and now_seconds() < pdata.stuck_escape_deadline then
             return apply_boost_and_shoot(pdata, pos, { down = true })
@@ -570,13 +854,44 @@ function battletanks.bots.get_controls(pdata, pos, dir)
     end
 
     if pdata.stuck_escape_phase == "turning" then
+        set_bot_state(pdata, "stuck - turning to escape")
         pdata.stuck_escape_phase = nil
+        abandon_all_targets(pdata)
         -- Give it a fresh, full STUCK_TIME window before this could
         -- possibly trigger again, rather than measuring from whenever the
         -- original escape started.
         pdata.stuck_ref_pos = pos
         pdata.stuck_ref_time = now_seconds()
+        pdata.post_escape_lock_until = now_seconds() + POST_ESCAPE_LOCK_DURATION
         return apply_boost_and_shoot(pdata, pos, { [pdata.stuck_escape_dir] = true, up = true })
+    end
+
+    -- Commit to the escape's chosen direction for a bit after the turn
+    -- above, rather than letting normal decision-making reconsider it
+    -- immediately - see POST_ESCAPE_LOCK_DURATION's comment for why.
+    -- Re-checked every tick: only holds as long as continuing straight
+    -- (in whatever direction the escape's turn left the bot facing) is
+    -- still actually clear.
+    if pdata.post_escape_lock_until and now_seconds() < pdata.post_escape_lock_until then
+        if path_clear(pos, dir, LOOKAHEAD) then
+            set_bot_state(pdata, "recovering after stuck")
+            return apply_boost_and_shoot(pdata, pos, { up = true })
+        end
+        pdata.post_escape_lock_until = nil -- turned out to be blocked too - let normal decision-making take over
+    end
+
+    -- A swerve in progress also overrides normal decision-making, briefly -
+    -- see decide_direction's swerve rule for why: without this, whatever
+    -- target-pursuit is currently active (hunting an enemy, seeking a
+    -- shield, etc.) would see the swerve's turn as having moved away from
+    -- its own goal and turn straight back next tick - putting the same
+    -- powerup adjacent again and re-triggering the swerve forever.
+    if pdata.swerve_lock_until and now_seconds() < pdata.swerve_lock_until then
+        if path_clear(pos, dir, 1) then
+            set_bot_state(pdata, "swerving for a powerup")
+            return apply_boost_and_shoot(pdata, pos, { up = true })
+        end
+        pdata.swerve_lock_until = nil -- turned out to be blocked too - let normal decision-making take over
     end
 
     local controls
@@ -587,6 +902,7 @@ function battletanks.bots.get_controls(pdata, pos, dir)
     else
         controls = decide_passive(pdata, pos, dir)
     end
+    pdata.swerve_prev_pos = pos -- for adjacent_powerup_side's sweep, next tick
 
     -- Movement is player/bot-gated now (see movement.lua) rather than
     -- forced - a bot needs to explicitly hold "up" to actually drive.
@@ -598,7 +914,14 @@ function battletanks.bots.get_controls(pdata, pos, dir)
         controls.up = true
     end
 
-    if controls.up then
+    -- Only tracked once movement is actually possible - during the
+    -- pre-match countdown, decide_* already runs (so a bot is correctly
+    -- oriented and aiming the instant "GO!" hits, the same reason turret
+    -- aiming already works during countdown), but movement itself is
+    -- frozen until then. Without this check, that frozen countdown looked
+    -- identical to being wedged against a wall, and the stuck-escape would
+    -- already be mid-recovery before the match even started.
+    if lobby_system.state.phase == "playing" and controls.up then
         update_stuck_escape(pdata, pos)
     else
         -- Deliberately holding position this tick, not stuck - don't let

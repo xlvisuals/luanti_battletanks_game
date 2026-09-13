@@ -160,6 +160,7 @@ end
 local flash_all_job = nil
 
 function lobby_system.hud.flash_all(text, seconds)
+    if lobby_system.hide_flash_messages then return end -- see settings.lua's comment - suppresses every big on-screen notification uniformly, not just eliminations
     local names = {}
     for _, player in ipairs(minetest.get_connected_players()) do
         table.insert(names, player:get_player_name())

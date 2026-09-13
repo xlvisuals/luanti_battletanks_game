@@ -114,6 +114,20 @@ battletanks.settings = {
         max_size = 2.5,
     },
 
+    shield_block_effect       = {
+        -- A brief light-green sparkle wherever a shield absorbs a hit -
+        -- deliberately smaller/quicker than the crash/blast effects above,
+        -- since this marks a racer surviving a hit, not being derezzed by
+        -- one, and shouldn't read as similarly dramatic.
+        amount = 24,
+        time = 0.15,
+        speed = 3,
+        min_lifetime = 0.2,
+        max_lifetime = 0.5,
+        min_size = 0.5,
+        max_size = 1.4,
+    },
+
     placement_points             = { 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 },
 
     point_powerups_enabled     = true,
@@ -156,12 +170,22 @@ battletanks.settings = {
     bot_count                  = 0,
     bot_behavior               = "random",
     bot_shoot_range            = 20,
-    bot_shoot_delay            = 0.5, -- seconds a bot needs a continuous clear shot on the same target before it's actually allowed to fire, simulating human aim/reaction time.
+    bot_shoot_delay            = 0.8, -- seconds a bot needs a continuous clear shot on the same target before it's actually allowed to fire, simulating human aim/reaction time.
     bot_low_ammo_threshold     = 5, -- total laser+rocket shots an aggressive bot considers "running low" - see bots.lua's decide_aggressive
 
     build_tool_range           = 10,
+    
+    -- Debugging aids for testing bot behavior
+    admin_invincible           = false, -- players with the lobby_admin priv can never be derezzed - by a shot or a pit - while this is true
+    allow_bots_only_match      = false, -- lets a match start, and keep running, with zero human players
+    bot_debug_logging          = false, -- logs (server log, not chat) whenever a bot's high-level intent changes - e.g. "Bot 1 (a): hunting Bot 2" - see bots.lua's set_bot_state
 }
 
+-- lobby_system doesn't know what a "bot" is at all, it just enforces a generic 
+-- "need at least one human to start" rule of its own.
+-- Flipping allow_bots_only_match setting is enough to also lift that condition
+lobby_system.settings.allow_empty_lobby_start = lobby_system.settings.allow_empty_lobby_start
+    or battletanks.settings.allow_bots_only_match
 battletanks.players = {}
 
 battletanks.storage = minetest.get_mod_storage()

@@ -40,7 +40,7 @@ local function spawn_bots(real_count)
             was_right = false,
             tank_obj = nil,
             turret_obj = nil,
-            engine_pitch_state = "normal",
+            engine_pitch_state = nil, -- nil means "not currently playing the loop sound"
             laser = starting_value(S.laser_powerups_enabled, S.starting_laser),
             laser_cooldown_remaining = 0,
             shield = starting_value(S.shield_powerups_enabled, S.starting_shield),
@@ -118,13 +118,14 @@ local function finalize_decision()
 
     if alive_now <= 1 then
         battletanks.end_match(winner) -- nil (draw) if alive_now == 0
-    elseif not human_alive then
-        finish_match(still_alive, "No humans left racing - " .. #still_alive .. " bot"
+    elseif not human_alive and not S.allow_bots_only_match then
+        finish_match(still_alive, "No humans left playing - " .. #still_alive .. " bot"
             .. (#still_alive == 1 and "" or "s") .. " tie for the win.")
     end
 end
 
 local function any_human_alive()
+    if S.allow_bots_only_match then return true end -- pretend there's always "a human" - see the setting's comment
     for n, p in pairs(battletanks.players) do
         if p.alive and not p.is_bot then return true end
     end
@@ -147,7 +148,32 @@ local function assign_battle_rank(names)
     end
 end
 
+-- Debugging aid (see settings.lua's admin_invincible) - excluded from
+-- ever actually being hit at all (see projectiles.lua's sweep_hit and
+-- movement.lua's pit check), not just from the elimination itself, so a
+-- shot at an invincible admin doesn't drain their shield or award the
+-- shooter a kill either. The checks here in eliminate/eliminate_batch are
+-- a second layer of defense in case anything else ever calls into them
+-- directly.
+function battletanks.is_admin_invincible(name)
+    return S.admin_invincible and minetest.check_player_privs(name, { lobby_admin = true })
+end
+
+local last_invincible_notice_us = {} -- name -> time of last chat notice, to avoid spamming it every tick
+
+local function notify_invincible_survival(name)
+    local now = minetest.get_us_time()
+    if not last_invincible_notice_us[name] or (now - last_invincible_notice_us[name]) > 2000000 then
+        last_invincible_notice_us[name] = now
+        minetest.chat_send_all("[BattleTanks] " .. name .. " would have been derezzed, but admin_invincible is on.")
+    end
+end
+
 function battletanks.eliminate(name, custom_message)
+    if battletanks.is_admin_invincible(name) then
+        notify_invincible_survival(name)
+        return
+    end
     assign_battle_rank({ name })
     mark_eliminated(name, custom_message)
     table.insert(battletanks.elimination_batches, { name })
@@ -156,11 +182,21 @@ function battletanks.eliminate(name, custom_message)
 end
 
 function battletanks.eliminate_batch(names)
-    assign_battle_rank(names)
+    local survivors = {}
     for _, name in ipairs(names) do
+        if battletanks.is_admin_invincible(name) then
+            notify_invincible_survival(name)
+        else
+            table.insert(survivors, name)
+        end
+    end
+    if #survivors == 0 then return end
+
+    assign_battle_rank(survivors)
+    for _, name in ipairs(survivors) do
         mark_eliminated(name)
     end
-    table.insert(battletanks.elimination_batches, names)
+    table.insert(battletanks.elimination_batches, survivors)
     battletanks.hud.update_battle_table()
     check_for_winner()
 end
@@ -373,7 +409,7 @@ local function help_formspec()
 		"<b>Score table</b>\n",
         "The score table shows each racer's name, rank in the current battle, battle score (including awarded points), and overall game score: \n",
         "- Name : Player name.\n",
-        "- RR : Battle Rank - the rank in the current battle.\n",
+        "- BR : Battle Rank - the rank in the current battle.\n",
 		"- RS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.\n",
 		"- GS : Game Score - sum of all Battle Scores.\n",
 		"\n",
@@ -397,8 +433,8 @@ local function help_formspec()
 		"- /btspawns : lists the spawn points of the current map.\n",
 		"- /btspawns <1-8> : teleports you to that exact spawn point, facing the way that racer would.\n",
 		"- /btpause : Pauses game movement and grants free look and move to the admin. Run it again to resume the game. The game clock is not stopped during pause.\n",
-		"- /bt show [score|names|battle|boost|all] : Show the player names above the battletanks, the Scores list, and the Battle number indicator, and the boost bar, or all (default).\n",
-		"- /bt hide [score|names|battle|boost|all] : Hide the player names above the battletanks, the Scores list, and the Battle number indicator, and the boost bar, or all.\n",
+		"- /bt show [score|names|battle|boost|messages|all] : Show the player names above the battletanks, the Scores list, the Battle number indicator, the boost bar, big on-screen flash notifications, or all (default).\n",
+		"- /bt hide [score|names|battle|boost|messages|all] : Hide the same - hiding messages leaves chat lines and sounds alone, just not the big flash text covering the screen (eliminations, GO!, win announcements, etc).\n",
 		"\n",
 		"<b>Building custom maps</b>\n",
 		"Clicking the 'Build Mode' button in the lobby grants fly/noclip/give permissions and hands you the tools to edit the arena:\n",
@@ -580,7 +616,7 @@ lobby_system.register_game({
             was_right = false,
             tank_obj = nil,
             turret_obj = nil,
-            engine_pitch_state = "normal",
+            engine_pitch_state = nil, -- nil means "not currently playing the loop sound"
             laser = starting_value(S.laser_powerups_enabled, S.starting_laser),
             laser_cooldown_remaining = 0,
             shield = starting_value(S.shield_powerups_enabled, S.starting_shield),
@@ -658,7 +694,7 @@ lobby_system.register_game({
             for i, n in ipairs(battle_options) do
                 if n == S.matches_per_session then races_idx = i; break end
             end
-            table.insert(fs, "label[0.4,5.8;Races per game:]")
+            table.insert(fs, "label[0.4,5.8;Battles per game:]")
             table.insert(fs, "dropdown[2.8,5.50;1.40,0.7;lc_battles_select;" ..
                 table.concat(battle_options, ",") .. ";" .. races_idx .. ";true]")
             table.insert(fs, "button[4.35,5.5;3.75,0.7;lc_reset_game;" ..
@@ -712,7 +748,7 @@ lobby_system.register_game({
             end
             table.insert(fs, "label[0.4,4.95;Map: " .. minetest.formspec_escape(map_display) .. "]")
 
-            table.insert(fs, "label[0.4,5.75;Races per game: " .. S.matches_per_session .. "]")
+            table.insert(fs, "label[0.4,5.75;Battles per game: " .. S.matches_per_session .. "]")
 
             table.insert(fs, "label[0.4,6.55;Point Powerups: "
                 .. (S.point_powerups_enabled and "ON" or "off") .. "]")
@@ -870,7 +906,7 @@ lobby_system.register_game({
                 if n then
                     S.matches_per_session = n
                     lobby_system.set_matches_per_game(n)
-                    minetest.chat_send_all("[BattleTanks] " .. name .. " set races per game to " .. n .. ".")
+                    minetest.chat_send_all("[BattleTanks] " .. name .. " set battles per game to " .. n .. ".")
                     lobby_system.gui.refresh_all()
                 end
             end

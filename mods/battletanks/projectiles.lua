@@ -29,7 +29,7 @@ local function try_shield_block(name, hit_pos)
     pdata.shield = pdata.shield - 1
     battletanks.hud.update_shield(minetest.get_player_by_name(name), pdata.shield)
     battletanks.sounds.play_shield_break(hit_pos)
-    battletanks.spawn_crash_effect(hit_pos, pdata.color)
+    battletanks.spawn_shield_block_effect(hit_pos)
     minetest.chat_send_all("[BattleTanks] " .. name .. "'s shield absorbed a hit! (" .. pdata.shield .. " left)")
     return true
 end
@@ -167,13 +167,12 @@ end
 local BLAST_RADIUS = 1
 
 -- Eliminates (or shield-blocks) any racer standing in the 3x3 area
--- centered on `center`, awarding the shooter a kill bonus for each racer
--- actually eliminated. shooter_name is excluded from the splash-kill check
--- (same as a direct hit already can't be the shooter's own tank - see
--- fire_laser/fire_rocket's forward spawn offset) - self-splash off your
--- own rocket would punish exactly the shots most likely to be fired
--- defensively, at point-blank range, against something bearing down on
--- you.
+-- centered on `center`, awarding the shooter a kill bonus for each other
+-- racer actually eliminated. The shooter's own tank is included in this
+-- check like anyone else's - a rocket fired at a wall close enough to
+-- catch yourself in the blast can derez you too, the same way a bounced
+-- laser can (see try_shield_block's caller below and bounce_off_wall's
+-- comment) - just with no kill bonus for derezzing yourself.
 local function explode_rocket(center, shooter_name)
     local cx, cz = center.x, center.z
     local y = S.arena_center.y + 1
@@ -185,21 +184,28 @@ local function explode_rocket(center, shooter_name)
             local p = { x = cx + dx, y = y, z = cz + dz }
 
             for rname, pdata in pairs(battletanks.players) do
-                if pdata.alive and pdata.tank_obj and rname ~= shooter_name then
+                if pdata.alive and pdata.tank_obj and not battletanks.is_admin_invincible(rname) then
                     local cpos = pdata.tank_obj:get_pos()
                     if cpos then
                         local rp = vector.round(cpos)
                         if rp.x == p.x and rp.z == p.z then
                             if not try_shield_block(rname, p) then
-                                local shooter_pdata = battletanks.players[shooter_name]
-                                if shooter_pdata and shooter_pdata.alive then
-                                    lobby_system.add_score(shooter_name, S.kill_by_shot_points)
-                                    shooter_pdata.battle_score = shooter_pdata.battle_score + S.kill_by_shot_points
-                                    lobby_system.hud.update_all_scoreboards()
-                                    battletanks.hud.update_battle_table()
+                                if rname == shooter_name then
+                                    -- Caught in your own blast - no kill
+                                    -- bonus for derezzing yourself.
+                                    battletanks.eliminate(rname, rname
+                                        .. " was derezzed by their own rocket blast!")
+                                else
+                                    local shooter_pdata = battletanks.players[shooter_name]
+                                    if shooter_pdata and shooter_pdata.alive then
+                                        lobby_system.add_score(shooter_name, S.kill_by_shot_points)
+                                        shooter_pdata.battle_score = shooter_pdata.battle_score + S.kill_by_shot_points
+                                        lobby_system.hud.update_all_scoreboards()
+                                        battletanks.hud.update_battle_table()
+                                    end
+                                    battletanks.eliminate(rname, rname .. " was derezzed by " .. shooter_name
+                                        .. "'s rocket! (+" .. S.kill_by_shot_points .. " for " .. shooter_name .. ")")
                                 end
-                                battletanks.eliminate(rname, rname .. " was derezzed by " .. shooter_name
-                                    .. "'s rocket! (+" .. S.kill_by_shot_points .. " for " .. shooter_name .. ")")
                             end
                         end
                     end
@@ -320,7 +326,8 @@ local function sweep_hit(p, prev, cur)
         local sample = { x = prev.x + dx * t, y = cur.y, z = prev.z + dz * t }
 
         for rname, pdata in pairs(battletanks.players) do
-            if pdata.alive and pdata.tank_obj and (rname ~= p.shooter_name or allow_self) then
+            if pdata.alive and pdata.tank_obj and (rname ~= p.shooter_name or allow_self)
+                and not battletanks.is_admin_invincible(rname) then
                 local cpos = pdata.tank_obj:get_pos()
                 if cpos and vector.distance(sample, cpos) < HIT_RADIUS then
                     return { kind = "tank", name = rname, pos = sample }, last_clear

@@ -8,6 +8,16 @@ lobby_system.settings = {
 
     min_players = 2,
 
+    -- Lets a match be started with zero human players joined (still
+    -- subject to min_players' own admin-override path below that) - off
+    -- by default for every game, since needing at least one actual human
+    -- to start a match is normally exactly the right behavior. Battletanks
+    -- turns this on automatically when its own allow_bots_only_match
+    -- setting is enabled (see its settings.lua) - a debugging aid for
+    -- testing bot behavior without a human in the way, not something a
+    -- match host should stumble into by accident.
+    allow_empty_lobby_start = false,
+
     score_to_win_game = nil,
 
     matches_per_game = nil,
@@ -46,6 +56,7 @@ lobby_system.state = {
 
 lobby_system.last_match_duration = {}
 
+lobby_system.hide_flash_messages = false
 
 function lobby_system.get_score(name)
     return lobby_system.state.scores[name] or 0
