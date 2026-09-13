@@ -7,17 +7,6 @@ local function ids_for(name)
     return hud_ids[name]
 end
 
--- A crosshair anchored to a point in the *world*, not the screen - the fix
--- for the actual bug: a screen-fixed HUD element (position={0.5,0.5})
--- necessarily tracks wherever the camera points, pitch included, since
--- that's what "fixed on screen" means - as the camera tilts down, a
--- screen-fixed reticle tilts down right along with it, relative to the
--- world. That's backwards for a turret that only ever fires level: the
--- reticle needs to stay level with the world (the turret's actual firing
--- line) instead, which necessarily means it *moves* on screen as the
--- camera pitches - up when you look down, down when you look up - see
--- update_crosshair below, which recomputes its world position every tick
--- from the tank's position and the turret's (horizontal-only) yaw.
 function battletanks.hud.add_crosshair(player)
     local name = player:get_player_name()
     local ids = ids_for(name)
@@ -35,11 +24,6 @@ function battletanks.hud.add_crosshair(player)
     })
 end
 
--- Recomputes and applies the crosshair's world position - called every
--- tick from movement.lua with a point straight out along the turret's
--- current (horizontal-only) aim, at the same height a shot actually
--- travels at. Never has a vertical component, matching the turret and its
--- shots, which is the whole point.
 function battletanks.hud.update_crosshair(player, world_pos)
     local name = player:get_player_name()
     local ids = ids_for(name)

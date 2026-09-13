@@ -10,11 +10,6 @@ local function freeze_all_players()
             pdata.tank_obj:set_velocity({ x = 0, y = 0, z = 0 })
         end
         if pdata.alive and pdata.turret_obj then
-            -- The turret only keeps moving by matching the body's own
-            -- velocity every tick (see movement.lua) - since pausing stops
-            -- movement.lua's globalstep from running at all, it needs its
-            -- own explicit freeze here too, or it'd keep sailing along at
-            -- whatever velocity it had the instant before pause.
             pdata.turret_obj:set_velocity({ x = 0, y = 0, z = 0 })
         end
     end
@@ -55,7 +50,6 @@ local function do_pause(name, player, pdata)
     minetest.set_player_privs(name, privs)
 
     minetest.chat_send_all("[BattleTanks] " .. name .. " paused the match.")
-    -- return true, "[BattleTanks] Match paused - fly/fast/noclip granted. " .. "Press K to actually start flying (the privilege alone doesn't turn it on). " .. "Run /btpause again to resume."
     return true, ""
 end
 
@@ -81,9 +75,6 @@ local function do_resume(name, player, pdata)
     return true, "[BattleTanks] Resumed."
 end
 
--- Shared by the /btpause chat command and the keybind watcher below - the
--- actual toggle, independent of how it was triggered. Does not check
--- privileges itself; both callers do that first.
 function battletanks.toggle_pause(name)
     local player = minetest.get_player_by_name(name)
     if not player then return false, "Not connected." end
@@ -126,13 +117,6 @@ minetest.register_chatcommand("btpause", {
     end,
 })
 
--- Keybind support: there's no server-side API to bind an arbitrary
--- keyboard key to a command - a mod can only react to Luanti's existing
--- named control fields (up/down/left/right/jump/aux1/sneak/dig/place/
--- zoom), all of which this game already uses for driving and firing
--- *except* zoom, which is unbound by default and otherwise untouched
--- here. Watching it for an admin's edge-triggered press is the closest
--- thing to a real keybind available.
 local was_zoom_pressed = {} -- name -> bool, edge-trigger tracking
 
 minetest.register_globalstep(function(_dtime)

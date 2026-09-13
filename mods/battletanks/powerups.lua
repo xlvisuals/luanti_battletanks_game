@@ -57,12 +57,6 @@ local function random_open_position()
     return nil -- arena too full of trails to find a spot this attempt; skip this tank
 end
 
--- Handles a powerup type that spawns at random open spots on a timer
--- (boost/shield/laser/rocket - point powerups are placed as part of the
--- level itself via spawner nodes, not through here). Up to `max_key`
--- instances of this type can be unclaimed on the arena at once; once
--- that many are already out, a spawn event is simply skipped (not queued
--- or delayed to "catch up" later) rather than exceeding the cap.
 local function make_random_powerup(node_name, enabled_key, interval_key, lifetime_key, max_key)
     local active = {} -- list of { pos = {x=,y=,z=}, expiry_job = <job> }
     local spawn_loop_job = nil -- job handle for the currently-scheduled next spawn attempt
@@ -77,9 +71,6 @@ local function make_random_powerup(node_name, enabled_key, interval_key, lifetim
         table.remove(active, index)
     end
 
-    -- Removes whichever instance is sitting at `pos` - used when a racer
-    -- actually picks one up, so only that one instance disappears rather
-    -- than every other still-unclaimed one of the same type.
     local function remove_at(pos)
         for i, inst in ipairs(active) do
             if vector.equals(inst.pos, pos) then
@@ -89,8 +80,6 @@ local function make_random_powerup(node_name, enabled_key, interval_key, lifetim
         end
     end
 
-    -- Removes every currently-unclaimed instance of this type - match end,
-    -- or an admin turning this powerup type off mid-match.
     local function clear_all()
         for i = #active, 1, -1 do
             remove_instance(i)

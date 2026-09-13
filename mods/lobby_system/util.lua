@@ -19,14 +19,6 @@ function lobby_system.show_nametag(player, text)
     })
 end
 
--- Privileges granted only while idle (connected but not currently
--- racing - waiting in the lobby, or just observing) so they can move
--- freely and watch a match in progress instead of being frozen in place.
--- Always revoked again the moment a player actually starts racing (see
--- exit_idle_state below, called from lobby.lua's start_one_player) -
--- this happens automatically for every game built on lobby_system, not
--- just battletanks, so there's no risk of a racer keeping noclip/fly
--- into an actual match.
 local IDLE_FLY_PRIVS = { fly = true, fast = true, noclip = true }
 
 function lobby_system.enter_idle_state(player)

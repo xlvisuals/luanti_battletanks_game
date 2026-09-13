@@ -150,7 +150,6 @@ function battletanks.ensure_map_loaded(on_done)
     local key = battletanks.current_map_key()
     if not key then
         minetest.log("info", "[battletanks] No valid .mts files found in schems/. Building default arena.")
-        -- no map loaded -> build default arena
         battletanks.build_arena(on_done)
         if on_done then on_done() end
         return

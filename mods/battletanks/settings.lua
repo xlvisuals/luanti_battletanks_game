@@ -40,9 +40,6 @@ battletanks.settings = {
         arena_boundary_blue   = "battletanks_tile_blue.png",
     },
 
-    -- In the same "x10" units set_attach expects (see entity.lua's
-    -- turret comment) - real-world offset is this divided by 10, so
-    -- {-3, 6, 0} here is {-0.3, 0.6, 0} nodes.
     tank_visual_size           = { x = 0.8, y = 0.5, z = 0.8 },
     tank_attach_offset         = { x = 0, y = -0.25, z = 0 },
     turret_visual_size         = { x = 0.22, y = 0.22, z = 0.85 }, -- long and thin, like a barrel
@@ -53,14 +50,6 @@ battletanks.settings = {
     laser_visual_size          = { x = 0.2, y = 0.2, z = 1 }, -- elongated along its direction of travel
     rocket_visual_size         = { x = 0.2, y = 0.2, z = 1 }, -- elongated along its direction of travel
 
-    -- The world-anchored crosshair (see hud.lua's add_crosshair/
-    -- update_crosshair) is placed at the actual point a shot fired right
-    -- now would hit - a fixed-distance point sitting at shot height,
-    -- below the camera, doesn't visually read as "the horizon" the way a
-    -- true impact point does (increasingly so at close range, since the
-    -- camera looks down at it more steeply than it would a distant point -
-    -- classic parallax). This caps how far out that search looks before
-    -- giving up and just showing the point at max range.
     crosshair_max_range        = 40,
 
     base_speed                = 6,    -- nodes/second, normal forward driving speed
@@ -101,10 +90,6 @@ battletanks.settings = {
     },
 
     rocket_blast_effect       = {
-        -- Visible burst at a rocket's impact point, shown regardless of
-        -- whether it actually caught a tank in the blast - a rocket that
-        -- hits a bare wall should still clearly look like it detonated,
-        -- not just silently vanish.
         amount = 40,
         time = 0.2,
         speed = 4,
@@ -115,10 +100,6 @@ battletanks.settings = {
     },
 
     shield_block_effect       = {
-        -- A brief light-green sparkle wherever a shield absorbs a hit -
-        -- deliberately smaller/quicker than the crash/blast effects above,
-        -- since this marks a racer surviving a hit, not being derezzed by
-        -- one, and shouldn't read as similarly dramatic.
         amount = 24,
         time = 0.15,
         speed = 3,
@@ -175,15 +156,11 @@ battletanks.settings = {
 
     build_tool_range           = 10,
     
-    -- Debugging aids for testing bot behavior
     admin_invincible           = false, -- players with the lobby_admin priv can never be derezzed - by a shot or a pit - while this is true
     allow_bots_only_match      = false, -- lets a match start, and keep running, with zero human players
     bot_debug_logging          = false, -- logs (server log, not chat) whenever a bot's high-level intent changes - e.g. "Bot 1 (a): hunting Bot 2" - see bots.lua's set_bot_state
 }
 
--- lobby_system doesn't know what a "bot" is at all, it just enforces a generic 
--- "need at least one human to start" rule of its own.
--- Flipping allow_bots_only_match setting is enough to also lift that condition
 lobby_system.settings.allow_empty_lobby_start = lobby_system.settings.allow_empty_lobby_start
     or battletanks.settings.allow_bots_only_match
 battletanks.players = {}

@@ -25,13 +25,6 @@ local function is_hazard_node(node_name)
         or (node_def and node_def.walkable)
 end
 
--- Where a shot fired from `start_pos` along `dir` (horizontal, unit
--- vector) would actually hit - the first wall/obstacle cell, or the point
--- at S.crosshair_max_range if nothing's in the way. Used to place the
--- world-anchored crosshair exactly at the shot's true impact point (see
--- hud.lua's update_crosshair) rather than at some arbitrary fixed
--- distance, which reads as noticeably wrong up close due to parallax
--- between the camera (above the tank) and the shot's actual height.
 local CROSSHAIR_STEP = 0.5
 
 local function crosshair_target_point(start_pos, dir)
@@ -49,13 +42,6 @@ end
 
 minetest.register_globalstep(function(dtime)
     local phase = lobby_system.state.phase
-    -- Players already exist and have a turret during "countdown" (spawning
-    -- happens before the countdown starts - see lobby_system's
-    -- start_one_player/run_countdown), so this runs then too, not just once
-    -- "playing" begins - otherwise the turret can't track a player's free-
-    -- look until GO!, and instead visibly snaps to catch up the instant it
-    -- does. Actual driving and firing stay gated to "playing" via
-    -- racing_active below.
     if phase ~= "playing" and phase ~= "countdown" then return end
     if battletanks.paused then return end
 
@@ -81,11 +67,6 @@ minetest.register_globalstep(function(dtime)
                 end
 
                 if racing_active then
-                    -- Body turning: still 90-degree locked and edge-
-                    -- triggered, same as lightcycles - only the "always
-                    -- moving" assumption elsewhere is what's new for tanks.
-                    -- Held off until "playing" (not during countdown), same
-                    -- as driving/firing below.
                     local tank_off = battletanks.settings.tank_attach_offset
                     if controls.left and not pdata.was_left then
                         pdata.yaw = pdata.yaw + HALF_PI
@@ -103,26 +84,9 @@ minetest.register_globalstep(function(dtime)
                     obj:set_yaw(pdata.yaw)
                 end
 
-                -- Turret aim: for a human player this follows their actual
-                -- mouse-look, independent of the body's cardinal-locked
-                -- yaw - the one genuinely new mechanical idea in Battle
-                -- Tanks (see the conversion notes). Bots don't have a
-                -- camera, but they can still aim independently of their
-                -- body facing - bots.lua works out an angle toward the
-                -- nearest in-range, line-of-sight enemy and leaves it on
-                -- pdata.bot_turret_yaw; falls back to the body facing when
-                -- there's nothing to aim at. Runs during the countdown too
-                -- (see the note at the top of this function) - only firing
-                -- is held back until "playing".
                 local turret_yaw = pdata.yaw
                 if player then
                     turret_yaw = player:get_look_horizontal()
-                    -- World-anchored crosshair (see hud.lua's
-                    -- add_crosshair/update_crosshair) - placed at the
-                    -- actual point a shot would hit right now, along the
-                    -- turret's horizontal-only aim, at the exact height a
-                    -- shot travels at. No vertical component, ever -
-                    -- matching the turret and its shots.
                     local body_pos_now = obj:get_pos()
                     if body_pos_now then
                         local aim_dir = minetest.yaw_to_dir(turret_yaw)
@@ -135,28 +99,13 @@ minetest.register_globalstep(function(dtime)
                 end
                 pdata.turret_yaw = turret_yaw
                 if pdata.turret_obj then
-                    -- Yaw only here - velocity is matched further down,
-                    -- after the movement block below has actually set the
-                    -- body's velocity for *this* tick. Doing it here
-                    -- instead would read the body's velocity from the
-                    -- *previous* tick (this tick's hasn't been decided
-                    -- yet), putting the turret one tick behind every time
-                    -- the body starts, stops, reverses, or turns - which
-                    -- is exactly what caused the rubber-banding.
                     pdata.turret_obj:set_yaw(turret_yaw)
                 end
 
                 if not racing_active then
-                    -- Countdown: turret tracking above still runs, but
-                    -- nothing else does yet.
                     goto continue
                 end
 
-                -- Movement: player-gated and 4-direction-locked (forward or
-                -- backward along the body's own facing - no free strafing),
-                -- replacing lightcycles' forced-always-forward drive. This
-                -- is the other big movement.lua change: driving is now
-                -- "hold a direction, move that way; release, stop."
                 local dir = minetest.yaw_to_dir(pdata.yaw)
                 local move_dir = nil
                 local is_reverse = false
@@ -167,14 +116,6 @@ minetest.register_globalstep(function(dtime)
                     is_reverse = true
                 end
 
-                -- Boost: a free-standing "hold to go faster" resource,
-                -- consumed by the boost key (sneak/Shift - freed up now
-                -- that the camera no longer needs it to look behind, since
-                -- free turret look already covers that). Only refills via
-                -- a boost powerup pickup (see powerups.lua) - it does NOT
-                -- regenerate over time, unlike lightcycles' brake-to-charge.
-                -- Requires move_dir (actually driving) so holding Shift
-                -- while standing still doesn't drain the bar for no effect.
                 local boosting = move_dir ~= nil and controls.sneak and pdata.boost > 0
                 local speed_mult = 1.0
                 local pitch_state = "normal"
@@ -195,8 +136,6 @@ minetest.register_globalstep(function(dtime)
                         battletanks.sounds.set_engine_pitch(obj, name, pitch)
                     end
                 elseif pdata.engine_pitch_state then
-                    -- Was moving, isn't any more - the loop sound should
-                    -- only play while actually driving, not idling.
                     pdata.engine_pitch_state = nil
                     battletanks.sounds.stop_engine_loop(name)
                 end
@@ -211,21 +150,6 @@ minetest.register_globalstep(function(dtime)
 
                 if move_dir then
                     local speed = S.base_speed * speed_mult
-                    -- Must cover at least as far as the tank is about to
-                    -- travel this tick (speed * dtime), not just a fixed
-                    -- distance - a fixed S.move_check_ahead can check less
-                    -- far than the tank is about to move whenever
-                    -- speed*dtime exceeds it, which is already true at
-                    -- ordinary tick rates once boost is factored in
-                    -- (S.move_check_ahead=0.35 vs. up to ~7.8 nodes/sec of
-                    -- boosted speed), and worse under any server slowdown
-                    -- that stretches dtime out further - letting the tank
-                    -- travel past what was actually verified clear before
-                    -- the next tick's check catches up, i.e. overshooting
-                    -- into a wall instead of stopping cleanly at its edge.
-                    -- The original S.move_check_ahead value is kept as a
-                    -- flat margin on top, for some buffer even at low
-                    -- speed (e.g. reverse).
                     local check_dist = speed * dtime + S.move_check_ahead
                     local ahead = vector.add(pos, vector.multiply(move_dir, check_dist))
                     local ahead_rounded = vector.round(ahead)
@@ -249,15 +173,9 @@ minetest.register_globalstep(function(dtime)
                     end
 
                     if is_pit then
-                        -- A gap in the floor is still lethal, same as
-                        -- lightcycles - unlike a wall or another tank
-                        -- (below), there's nothing to "just stop" against.
                         table.insert(to_eliminate, name)
                         obj:set_velocity({ x = 0, y = 0, z = 0 })
                     elseif is_wall or is_tank_ahead then
-                        -- Driving into a wall or another tank simply stops
-                        -- you - no elimination, no destroyed terrain. Only
-                        -- a shot can derez someone now (see projectiles.lua).
                         obj:set_velocity({ x = 0, y = 0, z = 0 })
                     else
                         obj:set_velocity({ x = move_dir.x * speed, y = 0, z = move_dir.z * speed })
@@ -267,19 +185,6 @@ minetest.register_globalstep(function(dtime)
                 end
 
                 if pdata.turret_obj then
-                    -- Not a real engine attachment - see entity.lua's
-                    -- spawn_turret comment on why (attached objects ignore
-                    -- position/rotation setters, which would make
-                    -- independent aiming impossible). Instead this just
-                    -- matches the body's own velocity - now that the body's
-                    -- velocity is actually finalized for this tick (the
-                    -- block just above) - which is what keeps it moving
-                    -- smoothly in lockstep. Doing this every tick instead
-                    -- of a per-tick set_pos() is what avoids visibly
-                    -- stepping/bumping along: an explicit position write
-                    -- gets sent to clients as a teleport each time rather
-                    -- than something they can interpolate between the way
-                    -- matched velocity is.
                     pdata.turret_obj:set_velocity(obj:get_velocity())
                 end
 

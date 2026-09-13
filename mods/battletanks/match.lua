@@ -57,9 +57,6 @@ local function spawn_bots(real_count)
         pdata.tank_obj = battletanks.spawn_bot_tank(bot_name, color, sp.pos, sp.yaw)
         if pdata.tank_obj then
             pdata.turret_obj = battletanks.spawn_turret(pdata.tank_obj, color)
-            -- No engine loop started here any more - movement.lua now
-            -- starts/stops it based on whether the tank is actually
-            -- moving, rather than it running continuously from spawn.
         end
     end
 end
@@ -148,13 +145,6 @@ local function assign_battle_rank(names)
     end
 end
 
--- Debugging aid (see settings.lua's admin_invincible) - excluded from
--- ever actually being hit at all (see projectiles.lua's sweep_hit and
--- movement.lua's pit check), not just from the elimination itself, so a
--- shot at an invincible admin doesn't drain their shield or award the
--- shooter a kill either. The checks here in eliminate/eliminate_batch are
--- a second layer of defense in case anything else ever calls into them
--- directly.
 function battletanks.is_admin_invincible(name)
     return S.admin_invincible and minetest.check_player_privs(name, { lobby_admin = true })
 end
@@ -293,11 +283,6 @@ finish_match = function(top_tier_names, message)
             pdata.tank_obj:set_velocity({ x = 0, y = 0, z = 0 })
         end
         if pdata.turret_obj then
-            -- Not attached to the tank (see entity.lua's spawn_turret) -
-            -- it was only kept moving by matching the body's own velocity
-            -- every tick, so once movement.lua stops touching this racer
-            -- (pdata.racing = false, just above) it would otherwise keep
-            -- sailing along at whatever velocity it last had.
             pdata.turret_obj:set_velocity({ x = 0, y = 0, z = 0 })
         end
         battletanks.sounds.stop_engine_loop(name)
@@ -550,10 +535,6 @@ lobby_system.register_game({
         battletanks.match_generation = battletanks.match_generation + 1
         local this_generation = battletanks.match_generation
 
-        -- Guarantees a clean slate regardless of how the previous match
-        -- ended (see the comment on this function in arena.lua) - a new
-        -- match should only ever start with point powerups on the map,
-        -- nothing else.
         battletanks.clear_stray_dynamic_powerups()
 
         if timeout_job then
@@ -641,9 +622,6 @@ lobby_system.register_game({
             battletanks.hud.update_shield(player, pdata.shield)
             battletanks.hud.update_rocket(player, pdata.rocket)
             battletanks.hud.update_boost_bar(player, pdata.boost)
-            -- No engine loop started here any more - movement.lua now
-            -- starts/stops it based on whether the tank is actually
-            -- moving, rather than it running continuously from spawn.
         end
 
     end,

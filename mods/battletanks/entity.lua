@@ -12,11 +12,6 @@ end
 minetest.register_entity("battletanks:tank", {
     initial_properties = {
         visual = "cube",
-        -- Square footprint (x == z), not stretched along the forward
-        -- axis like the original lightcycle body - a tank needs to read
-        -- its own heading at a glance for turning to feel precise, and an
-        -- elongated shape sweeps a much larger, harder-to-judge arc as it
-        -- rotates than a square one does.
         visual_size = battletanks.settings.tank_visual_size,
         textures = face_textures("red"),
         collisionbox = { -0.5, -0.4, -0.5, 0.5, 0.4, 0.5 },
@@ -33,10 +28,6 @@ minetest.register_entity("battletanks:tank", {
     end,
 })
 
--- The turret: a separate entity that shadows the tank body's position
--- (see spawn_turret/movement.lua) so its yaw can follow the player's
--- actual look direction independently of the body's own cardinal-locked
--- yaw.
 local function turret_textures(color)
     return {
         "battletanks_turret_" .. color .. "_top.png",    -- Y+
@@ -61,16 +52,6 @@ minetest.register_entity("battletanks:turret", {
     },
 })
 
--- Spawns a turret entity positioned at `parent_obj`'s current position
--- (plus turret_attach_offset) and returns it. This deliberately does NOT
--- use object:set_attach(): attached child objects have their position and
--- rotation setters silently ignored by the engine ("get_pos and
--- get_rotation will always return the parent's values and changes via
--- their setter counterparts are ignored" - Luanti API docs), which would
--- make it impossible to ever aim the turret independently of the body.
--- Instead movement.lua re-positions and re-yaws this object by hand every
--- tick, in lockstep with the tank body - a free-standing entity that
--- happens to follow another one, not a true attachment.
 function battletanks.spawn_turret(parent_obj, color)
     if not parent_obj then return nil end
     local parent_pos = parent_obj:get_pos()
@@ -89,16 +70,6 @@ function battletanks.despawn_turret(pdata)
     end
 end
 
--- One-off correction, not a per-tick thing: hard-snaps the turret entity
--- back to "body position + offset". Needed anywhere the body's own
--- position jumps outside of normal velocity integration (currently just
--- the 90-degree-turn grid-snap in movement.lua) - the turret otherwise
--- tracks the body every tick purely by matching its velocity (see
--- movement.lua), which is what keeps it moving smoothly instead of
--- visibly stepping; calling set_pos() every single tick as well as
--- matching velocity is what caused that stepping in the first place, so
--- this is deliberately only called at the rare moments it's actually
--- needed.
 function battletanks.sync_turret_to_body(pdata)
     if not (pdata and pdata.turret_obj and pdata.tank_obj) then return end
     local body_pos = pdata.tank_obj:get_pos()
@@ -180,12 +151,6 @@ function battletanks.spawn_crash_effect(pos, color)
     })
 end
 
--- A rocket's own impact burst - unlike spawn_crash_effect above, this
--- isn't tied to any particular racer's color, since a rocket can just as
--- easily detonate against a bare wall with nobody nearby as it can against
--- a tank. Always shown on any rocket detonation (see explode_rocket in
--- projectiles.lua), so a wall hit still visibly reads as an explosion
--- instead of the rocket just silently vanishing.
 function battletanks.spawn_rocket_blast_effect(pos)
     local S = battletanks.settings.rocket_blast_effect
     minetest.add_particlespawner({
@@ -207,14 +172,6 @@ function battletanks.spawn_rocket_blast_effect(pos)
     })
 end
 
--- A brief light-green sparkle wherever a shield absorbs a hit (see
--- try_shield_block in projectiles.lua) - not tied to the racer's own
--- color like spawn_crash_effect, since a shield block is a distinct kind
--- of event (surviving a hit, not being derezzed by one) that should read
--- the same way - shield-green - regardless of whose shield it was.
--- Reuses the shield powerup's own icon as the particle texture, colorized
--- to a consistent light green so it doesn't depend on the icon's exact
--- shade.
 function battletanks.spawn_shield_block_effect(pos)
     local S = battletanks.settings.shield_block_effect
     minetest.add_particlespawner({
