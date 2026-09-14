@@ -166,7 +166,7 @@ The score table shows each player's name, rank in the current battle, battle sco
 (including awarded points), and overall game score: 
 - Name : Player name.
 - BR : Battle Rank - the rank in the current battle.
-- RS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.
+- BS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.
 - GS : Game Score - sum of all Battle Scores.
 
 ### Powerups

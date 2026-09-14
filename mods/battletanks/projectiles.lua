@@ -268,9 +268,7 @@ minetest.register_globalstep(function(dtime)
                     local hit_pdata = battletanks.players[hit_name]
                     local hit_pos = hit_pdata and hit_pdata.tank_obj and hit_pdata.tank_obj:get_pos()
                     local rounded_hit_pos = vector.round(hit_pos or hit.pos)
-                    if not try_shield_block(hit_name, rounded_hit_pos) then
-                        explode_rocket(rounded_hit_pos, p.shooter_name)
-                    end
+                    explode_rocket(rounded_hit_pos, p.shooter_name)
                 else
                     if not try_shield_block(hit_name, hit.pos) then
                         if hit_name == p.shooter_name then

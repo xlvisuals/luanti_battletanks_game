@@ -125,7 +125,7 @@ local function battle_table_column_texts()
     local cols = {
         name = { minetest.colorize(RACE_TABLE_COLOR, "Name") },
         rr = { minetest.colorize(RACE_TABLE_COLOR, "BR") },
-        rs = { minetest.colorize(RACE_TABLE_COLOR, "RS") },
+        rs = { minetest.colorize(RACE_TABLE_COLOR, "BS") },
         gs = { minetest.colorize(RACE_TABLE_COLOR, "GS") },
     }
     for _, r in ipairs(rows) do

@@ -395,7 +395,7 @@ local function help_formspec()
         "The score table shows each racer's name, rank in the current battle, battle score (including awarded points), and overall game score: \n",
         "- Name : Player name.\n",
         "- BR : Battle Rank - the rank in the current battle.\n",
-		"- RS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.\n",
+		"- BS : Battle Score - points earned in the current battle. Battle Rank points are awarded at the end of the battle.\n",
 		"- GS : Game Score - sum of all Battle Scores.\n",
 		"\n",
 		"<b>Powerups</b>\n",
