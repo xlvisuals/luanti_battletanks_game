@@ -116,6 +116,73 @@ function battletanks.fire_rocket(name, pos, yaw)
     battletanks.sounds.play_shoot_rocket(pos)
 end
 
+local RECOGNIZER_HIT_RADIUS = 1.0
+
+local function fire_at_recognizer(kind, name, pos, rec)
+    local body_pos = rec.entities.body:get_pos()
+    if not body_pos then return end
+
+    local shot_origin = { x = pos.x, y = pos.y, z = pos.z }
+    local dx, dz, dy = body_pos.x - pos.x, body_pos.z - pos.z, body_pos.y - pos.y
+    local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if dist < 0.0001 then return end
+    local dir = { x = dx / dist, y = dy / dist, z = dz / dist }
+
+    local spawn_pos = vector.add(shot_origin, vector.multiply(dir, 1.2))
+    local entity_name = kind == "rocket" and "battletanks:rocket" or "battletanks:laser_bolt"
+    local obj = minetest.add_entity(spawn_pos, entity_name)
+    if not obj then return end
+    obj:set_yaw(minetest.dir_to_yaw({ x = dir.x, y = 0, z = dir.z }))
+
+    local speed_mult = kind == "rocket" and S.rocket_speed_multiplier or S.laser_speed_multiplier
+    local speed = S.base_speed * speed_mult
+    obj:set_velocity(vector.multiply(dir, speed))
+
+    local trail_spawner = nil
+    if kind == "rocket" then
+        trail_spawner = minetest.add_particlespawner({
+            attached = obj,
+            time = 0,
+            amount = 30,
+            minpos = { x = 0, y = 0, z = 0 },
+            maxpos = { x = 0, y = 0, z = 0 },
+            minvel = { x = -0.4, y = -0.2, z = -0.4 },
+            maxvel = { x = 0.4, y = 0.4, z = 0.4 },
+            minacc = { x = 0, y = -1, z = 0 },
+            maxacc = { x = 0, y = -1, z = 0 },
+            minexptime = 0.15,
+            maxexptime = 0.35,
+            minsize = 0.6,
+            maxsize = 1.2,
+            texture = "battletanks_rocket_projectile.png^[colorize:red:140",
+            glow = 14,
+            collisiondetection = false,
+        })
+        battletanks.sounds.play_shoot_rocket(pos)
+    else
+        battletanks.sounds.play_shoot_laser(pos)
+    end
+
+    table.insert(battletanks.projectiles, {
+        obj = obj,
+        shooter_name = name,
+        spawn_us = minetest.get_us_time(),
+        kind = kind,
+        trail_spawner = trail_spawner,
+        last_pos = spawn_pos,
+        bounce_count = 0,
+        target_recognizer = rec,
+    })
+end
+
+function battletanks.fire_laser_at_recognizer(name, pos, rec)
+    fire_at_recognizer("laser", name, pos, rec)
+end
+
+function battletanks.fire_rocket_at_recognizer(name, pos, rec)
+    fire_at_recognizer("rocket", name, pos, rec)
+end
+
 local BLAST_RADIUS = 1
 
 local function explode_rocket(center, shooter_name)
@@ -257,6 +324,26 @@ minetest.register_globalstep(function(dtime)
 
         if not obj or not obj:get_pos() then
             remove_this = true
+        elseif p.target_recognizer then
+            local pos = obj:get_pos()
+            local rec = p.target_recognizer
+            if not rec.body_alive then
+                remove_this = true -- target destroyed by something else mid-flight; shot just misses
+            else
+                local body_pos = rec.entities.body:get_pos()
+                if body_pos and vector.distance(pos, body_pos) < RECOGNIZER_HIT_RADIUS then
+                    battletanks.register_recognizer_hit(rec, p.shooter_name)
+                    remove_this = true
+                end
+            end
+
+            local lifetime = p.kind == "rocket" and S.rocket_lifetime or S.laser_lifetime
+            if not remove_this and (minetest.get_us_time() - p.spawn_us) / 1000000 > lifetime then
+                remove_this = true
+            end
+            if not remove_this then
+                p.last_pos = pos
+            end
         else
             local pos = obj:get_pos()
             local prev = p.last_pos or pos

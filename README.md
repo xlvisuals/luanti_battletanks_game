@@ -113,13 +113,13 @@ noclip, granted automatically and revoked the instant they actually start
 playing) instead of being frozen in place, so you can always get a good
 view of a battle in progress even without joining it.
 
-While a battle or its countdown is running, press **Space** or
-**left-click** to attach your camera to another player's tank and watch
-from just above it — pressing again cycles to the next racer and back to 
-your own free-fly view.
+While a battle or its countdown is running, press **left-click** to
+attach your camera to another player's tank and watch from just above
+it — pressing again cycles to the next racer and back to your own
+free-fly view.
 
 A player who gets derezzed automatically drops into a similar spectator
-view of whoever's still alive, cycled with **E** instead.
+view of whoever's still alive, cycled the same way — **left-click**.
 
 ### Scoring
 
@@ -194,6 +194,24 @@ further:
   on hitting either a tank or a wall, destroying a 3x3 area and
   eliminating every player caught standing in it, not just whichever it
   directly hit  — including the shooter themselves,
+
+### Recognizers
+
+Admins can turn these on from the lobby panel: one flying sentry per tank,
+patrolling above the maze and tracking its own tank from the air. They
+exist to add atmosphere and discourage camping — sit in one spot too long 
+and the Recognizer hunting you will catch up and stomp you.
+
+Your cannon can't normally aim upward, but aiming at the ground directly
+beneath a Recognizer locks your crosshair onto it instead, so your next 
+laser or rocket shot fires upward and hits it. This only works from a 
+certain distance out: a Recognizer flying close to directly overhead is 
+too steep an angle for the cannon to reach.
+
+A Recognizer takes three hits to bring down — one for each leg, then the
+body — and pays out points (5 by default) on that final hit. It respawns
+a few seconds later (10 by default), unless the tank itself gets derezzed 
+by anything else first, in which case its Recognizer goes down with it.
 
 ### Bots
 
@@ -309,6 +327,17 @@ testing bots easier:
 
 ![BattleTanks](screenshots/battletanks04.png)
 
+![BattleTanks](screenshots/battletanks05.png)
+
+![BattleTanks](screenshots/battletanks06.png)
+
+![BattleTanks](screenshots/battletanks07.png)
+
+![BattleTanks](screenshots/battletanks08.png)
+
+![BattleTanks](screenshots/battletanks09.png)
+
+![BattleTanks](screenshots/battletanks10.png)
 
 ## Credits & License
 

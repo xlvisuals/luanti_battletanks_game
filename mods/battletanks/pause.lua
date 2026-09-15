@@ -33,12 +33,21 @@ local function unfreeze_all_projectiles()
     end
 end
 
+local function freeze_all_recognizers()
+    for _, rec in pairs(battletanks.recognizers) do
+        if rec.entities.body then
+            rec.entities.body:set_velocity({ x = 0, y = 0, z = 0 })
+        end
+    end
+end
+
 local function do_pause(name, player, pdata)
     battletanks.paused = true
     battletanks.paused_by = name
 
     freeze_all_players()
     freeze_all_projectiles()
+    freeze_all_recognizers()
 
     player:set_detach()
     player:set_physics_override({ speed = 1, jump = 1, gravity = 0 })

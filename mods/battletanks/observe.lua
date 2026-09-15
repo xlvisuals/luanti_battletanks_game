@@ -83,7 +83,7 @@ minetest.register_globalstep(function(_dtime)
             end
 
             local controls = player:get_player_control()
-	    local pressed = controls.dig
+            local pressed = controls.dig
             if pressed and not last_trigger[name] then
                 local names = racer_names_sorted()
                 local total = #names + 1 -- +1 for the free-look stop

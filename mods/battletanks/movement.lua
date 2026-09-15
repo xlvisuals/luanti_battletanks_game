@@ -40,6 +40,19 @@ local function crosshair_target_point(start_pos, dir)
     return vector.add(start_pos, vector.multiply(dir, S.crosshair_max_range))
 end
 
+local function path_clear_to(start_pos, dir, max_dist)
+    local steps = math.max(1, math.floor(max_dist / CROSSHAIR_STEP))
+    for step = 1, steps do
+        local sample = vector.add(start_pos, vector.multiply(dir, step * CROSSHAIR_STEP))
+        local rounded = vector.round(sample)
+        rounded.y = S.arena_center.y + 1
+        if is_hazard_node(minetest.get_node(rounded).name) then
+            return false
+        end
+    end
+    return true
+end
+
 minetest.register_globalstep(function(dtime)
     local phase = lobby_system.state.phase
     if phase ~= "playing" and phase ~= "countdown" then return end
@@ -88,11 +101,69 @@ minetest.register_globalstep(function(dtime)
                 if player then
                     turret_yaw = player:get_look_horizontal()
                     local body_pos_now = obj:get_pos()
+                    pdata.locked_recognizer = nil
                     if body_pos_now then
                         local aim_dir = minetest.yaw_to_dir(turret_yaw)
                         local shot_origin = { x = body_pos_now.x, y = S.arena_center.y + 1, z = body_pos_now.z }
                         local aim_point = crosshair_target_point(shot_origin, aim_dir)
-                        battletanks.hud.update_crosshair(player, aim_point)
+
+                        if S.recognizers_enabled and next(battletanks.recognizers) then
+                            local max_elevation_tan = math.tan(math.rad(S.recognizer_max_elevation_deg))
+                            for _, rec in pairs(battletanks.recognizers) do
+                                if rec.body_alive then
+                                    local rpos = rec.entities.body:get_pos()
+                                    if rpos then
+                                        local fx, fz = rpos.x - body_pos_now.x, rpos.z - body_pos_now.z
+                                        local t = fx * aim_dir.x + fz * aim_dir.z
+                                        if t > 0 then
+                                            local closest_x = body_pos_now.x + aim_dir.x * t
+                                            local closest_z = body_pos_now.z + aim_dir.z * t
+                                            local pdx, pdz = rpos.x - closest_x, rpos.z - closest_z
+                                            if math.sqrt(pdx * pdx + pdz * pdz) <= S.recognizer_lock_radius then
+                                                local shooter_dist = math.sqrt(fx * fx + fz * fz)
+                                                local rise = rpos.y - body_pos_now.y
+                                                local min_lock_dist = rise > 0 and (rise / max_elevation_tan) or 0
+                                                if shooter_dist >= min_lock_dist
+                                                    and path_clear_to(shot_origin, aim_dir, shooter_dist) then
+                                                    local tank_in_way = false
+                                                    for oname, opdata in pairs(battletanks.players) do
+                                                        if opdata.alive and opdata.tank_obj then
+                                                            local opos = opdata.tank_obj:get_pos()
+                                                            if opos then
+                                                                local ofx, ofz = opos.x - body_pos_now.x, opos.z - body_pos_now.z
+                                                                local ot = ofx * aim_dir.x + ofz * aim_dir.z
+                                                                if ot > 0 and ot < shooter_dist then
+                                                                    local ocx = body_pos_now.x + aim_dir.x * ot
+                                                                    local ocz = body_pos_now.z + aim_dir.z * ot
+                                                                    local otdx, otdz = opos.x - ocx, opos.z - ocz
+                                                                    if math.sqrt(otdx * otdx + otdz * otdz) < 1.0 then
+                                                                        tank_in_way = true
+                                                                        break
+                                                                    end
+                                                                end
+                                                            end
+                                                        end
+                                                    end
+                                                    if not tank_in_way then
+                                                        pdata.locked_recognizer = rec
+                                                        break
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+
+                        if pdata.locked_recognizer then
+                            battletanks.hud.update_crosshair(player, pdata.locked_recognizer.entities.body:get_pos())
+                        else
+                            battletanks.hud.update_crosshair(player, aim_point)
+                        end
+
+                        local now_locked = pdata.locked_recognizer ~= nil
+                        pdata.was_locked_on_recognizer = now_locked
                     end
                 elseif pdata.bot_turret_yaw then
                     turret_yaw = pdata.bot_turret_yaw
@@ -197,7 +268,11 @@ minetest.register_globalstep(function(dtime)
                     and (not pdata.laser_cooldown_remaining or pdata.laser_cooldown_remaining <= 0) then
                     pdata.laser = pdata.laser - 1
                     pdata.laser_cooldown_remaining = S.laser_cooldown
-                    battletanks.fire_laser(name, pos, turret_yaw)
+                    if pdata.locked_recognizer then
+                        battletanks.fire_laser_at_recognizer(name, pos, pdata.locked_recognizer)
+                    else
+                        battletanks.fire_laser(name, pos, turret_yaw)
+                    end
                     if player then
                         battletanks.hud.update_laser(player, pdata.laser)
                     end
@@ -211,7 +286,11 @@ minetest.register_globalstep(function(dtime)
                     and (not pdata.rocket_cooldown_remaining or pdata.rocket_cooldown_remaining <= 0) then
                     pdata.rocket = pdata.rocket - 1
                     pdata.rocket_cooldown_remaining = S.rocket_cooldown
-                    battletanks.fire_rocket(name, pos, turret_yaw)
+                    if pdata.locked_recognizer then
+                        battletanks.fire_rocket_at_recognizer(name, pos, pdata.locked_recognizer)
+                    else
+                        battletanks.fire_rocket(name, pos, turret_yaw)
+                    end
                     if player then
                         battletanks.hud.update_rocket(player, pdata.rocket)
                     end

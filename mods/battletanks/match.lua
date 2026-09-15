@@ -57,6 +57,7 @@ local function spawn_bots(real_count)
         pdata.tank_obj = battletanks.spawn_bot_tank(bot_name, color, sp.pos, sp.yaw)
         if pdata.tank_obj then
             pdata.turret_obj = battletanks.spawn_turret(pdata.tank_obj, color)
+            battletanks.spawn_recognizer_if_enabled(bot_name, sp.pos)
         end
     end
 end
@@ -66,6 +67,7 @@ local function despawn_all_bots()
         if pdata.is_bot then
             battletanks.sounds.stop_engine_loop(name)
             battletanks.despawn_tank(nil, pdata)
+            battletanks.despawn_recognizer_for(name)
             battletanks.players[name] = nil
         end
     end
@@ -83,6 +85,7 @@ local function mark_eliminated(name, custom_message)
     local crash_pos = pdata.tank_obj and pdata.tank_obj:get_pos()
     battletanks.sounds.stop_engine_loop(name)
     battletanks.despawn_tank(player, pdata)
+    battletanks.on_tank_eliminated_for_recognizer(name)
     if crash_pos then
         battletanks.spawn_crash_effect(crash_pos, pdata.color)
     end
@@ -406,6 +409,11 @@ local function help_formspec()
 		"- Rocket powerup : grants " .. S.rocket_per_pickup .. " rockets. \n",
 		" A rocket is slower than a laser, but destroys a 3x3 area on impact instead of a single block, and eliminates anyone else caught in the blast too.\n",
 		"\n",
+		"<b>Recognizers</b>\n",
+		"Admins can turn these on from the lobby panel: one flying sentry per tank, patrolling above the maze and tracking it from the air. Sit in one spot too long and the Recognizer hunting you will catch up and stomp you.\n",
+		"Your cannon can't normally aim upward, but aiming at the ground directly beneath a Recognizer - and not at a tank - locks your crosshair onto it instead, so your next laser or rocket shot fires upward and hits it. This only works from a certain distance out: a Recognizer flying close or directly overhead is too steep an angle for the cannon to reach.\n",
+		"A Recognizer takes three hits to bring down - one for each leg, then the body. Destroying one awards " .. S.recognizer_points .. " points and starts a " .. S.recognizer_respawn_time .. "-second respawn timer.\n",
+		"\n",
 		"<b>Player chat commands</b>\n",
 		"- /bt or /bt menu : opens the lobby panel\n",
 		"- /bt join : join the lobby.\n",
@@ -536,6 +544,7 @@ lobby_system.register_game({
         local this_generation = battletanks.match_generation
 
         battletanks.clear_stray_dynamic_powerups()
+        battletanks.clear_all_recognizers()
 
         if timeout_job then
             timeout_job:cancel(); timeout_job = nil
@@ -612,6 +621,7 @@ lobby_system.register_game({
         if player then
             player:set_physics_override({ speed = 0, jump = 0, gravity = 0 })
             pdata.tank_obj = battletanks.spawn_tank(player, pdata, color, pos, yaw)
+            battletanks.spawn_recognizer_if_enabled(name, pos)
             battletanks.hud.add_boost_bar(player)
             battletanks.hud.set_battle_table_visible(player, true)
             battletanks.hud.update_battle_table()
@@ -631,6 +641,7 @@ lobby_system.register_game({
         local player = minetest.get_player_by_name(name)
         battletanks.sounds.stop_engine_loop(name)
         battletanks.despawn_tank(player, pdata)
+        battletanks.despawn_recognizer_for(name)
         if player then
             battletanks.hud.remove_boost_bar(player)
         end
@@ -698,8 +709,12 @@ lobby_system.register_game({
 
             local rocket_label = S.rocket_powerups_enabled
                 and "Rocket Powerups: ON" or "Rocket Powerups: off"
-            table.insert(fs, "button[0.4,8.2;7.7,0.8;lc_rocket_powerups_toggle;" ..
+            local recognizers_label = S.recognizers_enabled
+                and "Recognizers: ON" or "Recognizers: off"
+            table.insert(fs, "button[0.4,8.2;3.75,0.8;lc_rocket_powerups_toggle;" ..
                 minetest.formspec_escape(rocket_label) .. "]")
+            table.insert(fs, "button[4.35,8.2;3.75,0.8;lc_recognizers_toggle;" ..
+                minetest.formspec_escape(recognizers_label) .. "]")
 
             table.insert(fs, "label[0.4,9.45;Bots:]")
             table.insert(fs, "dropdown[1.25,9.15;1.5,0.7;lc_bot_count;0,1,2,3,4,5,6,7;" ..
@@ -740,6 +755,8 @@ lobby_system.register_game({
 
             table.insert(fs, "label[0.4,8.15;Rocket Powerups: "
                 .. (S.rocket_powerups_enabled and "ON" or "off") .. "]")
+            table.insert(fs, "label[4.35,8.15;Recognizers: "
+                .. (S.recognizers_enabled and "ON" or "off") .. "]")
 
             table.insert(fs, "label[0.4,8.95;Bots: " .. S.bot_count .. "]")
             if S.bot_count > 0 then
@@ -834,6 +851,17 @@ lobby_system.register_game({
                 end
                 minetest.chat_send_all("[BattleTanks] " .. name .. " turned rocket powerups "
                     .. (S.rocket_powerups_enabled and "ON" or "off") .. ".")
+                lobby_system.gui.refresh_all()
+            end
+            return true
+        elseif fields.lc_recognizers_toggle then
+            if is_admin then
+                S.recognizers_enabled = not S.recognizers_enabled
+                if not S.recognizers_enabled then
+                    battletanks.clear_all_recognizers()
+                end
+                minetest.chat_send_all("[BattleTanks] " .. name .. " turned Recognizers "
+                    .. (S.recognizers_enabled and "ON" or "off") .. ".")
                 lobby_system.gui.refresh_all()
             end
             return true

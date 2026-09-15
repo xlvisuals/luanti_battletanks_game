@@ -5,7 +5,7 @@ math.randomseed(os.time())
 
 battletanks.settings = {
 
-    title                         = "BattleTanks v1.0.1",
+    title                         = "BattleTanks v1.0.2",
 
     arena_center                  = { x = 0, y = 50, z = 0 }, -- built well above ground, self-contained
     arena_size                    = 101,                      -- floor is arena_size x arena_size (101x101) - needs to be uneven for fair distances
@@ -109,6 +109,26 @@ battletanks.settings = {
         max_size = 1.4,
     },
 
+    recognizer_leg_effect     = {
+        amount = 20,
+        time = 0.15,
+        speed = 3,
+        min_lifetime = 0.2,
+        max_lifetime = 0.5,
+        min_size = 0.5,
+        max_size = 1.4,
+    },
+
+    recognizer_body_effect    = {
+        amount = 40,
+        time = 0.15,
+        speed = 4,
+        min_lifetime = 0.3,
+        max_lifetime = 0.9,
+        min_size = 0.8,
+        max_size = 2.2,
+    },
+
     placement_points             = { 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 },
 
     point_powerups_enabled     = true,
@@ -148,6 +168,19 @@ battletanks.settings = {
 
     matches_per_session        = 5,
 
+    recognizers_enabled        = true,
+    recognizer_height_offset   = 5,   -- nodes above tank/spawn level a Recognizer cruises at
+    recognizer_lateral_offset  = 5,   -- nodes outward from a tank's spawn point (relative to arena center) a Recognizer initially spawns at
+    recognizer_retarget_interval = 2, -- seconds between a Recognizer re-reading its tank's current position as its new chase target
+    recognizer_speed_ratio     = 0.5, -- cruise/chase speed, as a fraction of base_speed
+    recognizer_vertical_speed_multiplier = 2, -- stomp-dive and recover-climb speed, as a multiple of the (already speed-ratio'd) cruise speed - vertical moves read as sudden, unlike the steady horizontal chase
+    recognizer_stomp_radius    = 0.6, -- horizontal distance (nodes) to its tank within which a Recognizer begins/continues a stomp dive
+    recognizer_stomp_hit_height = 0.8, -- how close (nodes, vertically) a diving Recognizer must get to tank height to actually derez it
+    recognizer_points          = 5,   -- match points awarded for derezzing (fully destroying) a Recognizer
+    recognizer_respawn_time    = 10,  -- seconds after a Recognizer is destroyed before a fresh one spawns for that tank (only while the tank is still alive)
+    recognizer_max_elevation_deg = 20, -- cannon's maximum simulated elevation when locking onto a Recognizer - real tanks manage roughly 15; a little extra headroom here since this is the only "aiming up" the game does at all
+    recognizer_lock_radius     = 1.2, -- horizontal distance (nodes) from a player's flat aim point to a Recognizer's own position within which the game will lock onto it instead of the ground/a tank
+
     bot_count                  = 0,
     bot_behavior               = "random",
     bot_shoot_range            = 20,
@@ -155,7 +188,7 @@ battletanks.settings = {
     bot_low_ammo_threshold     = 5, -- total laser+rocket shots an aggressive bot considers "running low" - see bots.lua's decide_aggressive
 
     build_tool_range           = 10,
-    
+
     admin_invincible           = false, -- players with the lobby_admin priv can never be derezzed - by a shot or a pit - while this is true
     allow_bots_only_match      = false, -- lets a match start, and keep running, with zero human players
     bot_debug_logging          = false, -- logs (server log, not chat) whenever a bot's high-level intent changes - e.g. "Bot 1 (a): hunting Bot 2" - see bots.lua's set_bot_state

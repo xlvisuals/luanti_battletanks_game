@@ -1,5 +1,5 @@
 
-local last_aux1 = {} -- name -> bool, for edge-detecting the tank key
+local last_trigger = {} -- name -> bool, for edge-detecting the cycle key
 
 local function alive_names_sorted()
     local list = {}
@@ -10,6 +10,21 @@ local function alive_names_sorted()
     return list
 end
 
+local function spectate_target(pdata)
+    local names = alive_names_sorted()
+    if #names == 0 then return nil end
+    pdata.spec_index = ((pdata.spec_index - 1) % #names) + 1
+    return names[pdata.spec_index]
+end
+
+local function spectate_status_text(pdata)
+    local target_name = spectate_target(pdata)
+    if target_name then
+        return "DEREZZED - watching " .. target_name .. " (click to switch)", target_name
+    end
+    return "DEREZZED - no players left to watch", nil
+end
+
 function battletanks.enter_spectate(player, pdata)
     pdata.mode = "spectating"
     pdata.spec_index = 1
@@ -17,14 +32,7 @@ function battletanks.enter_spectate(player, pdata)
     lobby_system.hide_player_body(player)
     lobby_system.hide_nametag(player)
     battletanks.hud.remove_boost_bar(player)
-    lobby_system.hud.set_status(player, "DEREZZED - spectating (press E to switch)")
-end
-
-local function spectate_target(pdata)
-    local names = alive_names_sorted()
-    if #names == 0 then return nil end
-    pdata.spec_index = ((pdata.spec_index - 1) % #names) + 1
-    return names[pdata.spec_index]
+    lobby_system.hud.set_status(player, (spectate_status_text(pdata)))
 end
 
 minetest.register_globalstep(function(dtime)
@@ -35,12 +43,12 @@ minetest.register_globalstep(function(dtime)
             local player = minetest.get_player_by_name(name)
             if player and player:is_player() then
                 local controls = player:get_player_control()
-                if controls.aux1 and not last_aux1[name] then
+                if controls.dig and not last_trigger[name] then
                     pdata.spec_index = (pdata.spec_index or 0) + 1
                 end
-                last_aux1[name] = controls.aux1
+                last_trigger[name] = controls.dig
 
-                local target_name = spectate_target(pdata)
+                local status_text, target_name = spectate_status_text(pdata)
                 if target_name then
                     local target = minetest.get_player_by_name(target_name)
                     local tdata = battletanks.players[target_name]
@@ -51,11 +59,10 @@ minetest.register_globalstep(function(dtime)
                         behind.y = tpos.y + 2
                         player:set_pos(behind)
                         player:set_look_horizontal(tdata.yaw)
-                        lobby_system.hud.set_status(player,
-                            "DEREZZED - watching " .. target_name .. " (press E to switch)")
+                        lobby_system.hud.set_status(player, status_text)
                     end
                 else
-                    lobby_system.hud.set_status(player, "DEREZZED - no players left to watch")
+                    lobby_system.hud.set_status(player, status_text)
                 end
             end
         end
